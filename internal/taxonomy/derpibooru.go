@@ -4,27 +4,45 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/monbooru/monloader/internal/shared/fsx"
 )
 
-const derpibooruBaseURL = "https://derpibooru.org"
+const (
+	derpibooruBaseURL       = "https://derpibooru.org"
+	derpibooruMaxConcurrent = 1
+	derpibooruMaxAttempts   = 5
+)
 
 type Enricher interface {
 	Enrich(context.Context, map[string]any) error
 }
 
+type tagCall struct {
+	done chan struct{}
+	rec  tagRecord
+	err  error
+}
+
 type Derpibooru struct {
-	mu        sync.Mutex
-	cache     map[string]tagRecord
-	cachePath string
-	baseURL   string
-	client    *http.Client
+	mu              sync.Mutex
+	saveMu          sync.Mutex
+	cache           map[string]tagRecord
+	inflight        map[string]*tagCall
+	slots           chan struct{}
+	generation      uint64
+	savedGeneration uint64
+	cachePath       string
+	baseURL         string
+	client          *http.Client
 }
 
 type tagRecord struct {
@@ -55,6 +73,8 @@ func newDerpibooru(
 ) (*Derpibooru, error) {
 	d := &Derpibooru{
 		cache:     map[string]tagRecord{},
+		inflight:  map[string]*tagCall{},
+		slots:     make(chan struct{}, derpibooruMaxConcurrent),
 		cachePath: cachePath,
 		baseURL:   strings.TrimRight(baseURL, "/"),
 		client:    client,
@@ -108,17 +128,54 @@ func (d *Derpibooru) Enrich(
 		Rating tags remain unchanged so the existing Philomena rating
 		path continues to lift them into Monbooru's rating category.
 	*/
-	rewritten := make([]string, 0, len(sourceTags))
+	records := make([]tagRecord, len(sourceTags))
+	errs := make([]error, len(sourceTags))
 
-	for _, sourceName := range sourceTags {
-		rec, err := d.resolve(ctx, sourceName)
+	var wg sync.WaitGroup
+
+	for i, sourceName := range sourceTags {
+		i := i
+		sourceName := sourceName
+
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			records[i], errs[i] = d.resolve(
+				ctx,
+				sourceName,
+			)
+		}()
+	}
+
+	wg.Wait()
+
+	/*
+		Persist successful cache misses even if another tag in the same
+		post failed. The metadata itself is still mutated only after every
+		tag resolved successfully, preserving all-or-nothing enrichment.
+	*/
+	saveErr := d.save()
+
+	for i, err := range errs {
 		if err != nil {
 			return fmt.Errorf(
 				"resolving Derpibooru tag %q: %w",
-				sourceName,
+				sourceTags[i],
 				err,
 			)
 		}
+	}
+
+	if saveErr != nil {
+		return saveErr
+	}
+
+	rewritten := make([]string, 0, len(sourceTags))
+
+	for i, sourceName := range sourceTags {
+		rec := records[i]
 
 		target, name, isRating := derpibooruTarget(
 			rec,
@@ -217,11 +274,75 @@ func (d *Derpibooru) resolve(
 	key := normalizeKey(name)
 
 	d.mu.Lock()
+
 	if rec, ok := d.cache[key]; ok {
 		d.mu.Unlock()
 		return rec, nil
 	}
+
+	/*
+		Multiple jobs frequently share common tags. If another goroutine
+		is already resolving this exact tag, wait for its result instead
+		of issuing another HTTP request.
+	*/
+	if call, ok := d.inflight[key]; ok {
+		done := call.done
+		d.mu.Unlock()
+
+		select {
+		case <-ctx.Done():
+			return tagRecord{}, ctx.Err()
+
+		case <-done:
+			return call.rec, call.err
+		}
+	}
+
+	call := &tagCall{
+		done: make(chan struct{}),
+	}
+
+	d.inflight[key] = call
 	d.mu.Unlock()
+
+	rec, err := d.fetch(ctx, name)
+
+	d.mu.Lock()
+
+	if err == nil {
+		d.cache[key] = rec
+		d.generation++
+	}
+
+	call.rec = rec
+	call.err = err
+
+	delete(d.inflight, key)
+	close(call.done)
+
+	d.mu.Unlock()
+
+	return rec, err
+}
+
+func (d *Derpibooru) fetch(
+	ctx context.Context,
+	name string,
+) (tagRecord, error) {
+	/*
+		Derpibooru rate-limits bursts aggressively. Keep actual source
+		requests serialized; the cache and in-flight map still prevent
+		repeated work across jobs.
+	*/
+	select {
+	case d.slots <- struct{}{}:
+		defer func() {
+			<-d.slots
+		}()
+
+	case <-ctx.Done():
+		return tagRecord{}, ctx.Err()
+	}
 
 	u, err := url.Parse(
 		d.baseURL + "/api/v1/json/search/tags",
@@ -234,90 +355,181 @@ func (d *Derpibooru) resolve(
 	q.Set("q", name)
 	u.RawQuery = q.Encode()
 
-	req, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodGet,
-		u.String(),
-		nil,
-	)
-	if err != nil {
-		return tagRecord{}, err
-	}
-
-	req.Header.Set(
-		"User-Agent",
-		"monloader Derpibooru taxonomy resolver",
-	)
-
-	resp, err := d.client.Do(req)
-	if err != nil {
-		return tagRecord{}, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return tagRecord{}, fmt.Errorf(
-			"Derpibooru returned HTTP %d",
-			resp.StatusCode,
+	for attempt := 0; attempt < derpibooruMaxAttempts; attempt++ {
+		req, err := http.NewRequestWithContext(
+			ctx,
+			http.MethodGet,
+			u.String(),
+			nil,
 		)
-	}
+		if err != nil {
+			return tagRecord{}, err
+		}
 
-	var body tagSearchResponse
-
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return tagRecord{}, fmt.Errorf(
-			"decoding Derpibooru response: %w",
-			err,
+		req.Header.Set(
+			"User-Agent",
+			"monloader Derpibooru taxonomy resolver",
 		)
-	}
 
-	var match *tagRecord
+		resp, err := d.client.Do(req)
+		if err != nil {
+			return tagRecord{}, err
+		}
 
-	for i := range body.Tags {
-		if strings.EqualFold(
-			strings.TrimSpace(body.Tags[i].Name),
-			strings.TrimSpace(name),
-		) {
-			match = &body.Tags[i]
-			break
+		if resp.StatusCode >= 200 &&
+			resp.StatusCode < 300 {
+			var body tagSearchResponse
+
+			err := json.NewDecoder(
+				resp.Body,
+			).Decode(&body)
+
+			resp.Body.Close()
+
+			if err != nil {
+				return tagRecord{}, fmt.Errorf(
+					"decoding Derpibooru response: %w",
+					err,
+				)
+			}
+
+			for i := range body.Tags {
+				if strings.EqualFold(
+					strings.TrimSpace(body.Tags[i].Name),
+					strings.TrimSpace(name),
+				) {
+					return body.Tags[i], nil
+				}
+			}
+
+			return tagRecord{}, fmt.Errorf(
+				"no exact tag match returned",
+			)
+		}
+
+		status := resp.StatusCode
+
+		retryable := status == http.StatusTooManyRequests ||
+			status >= 500
+
+		delay, hasRetryAfter := retryAfter(
+			resp.Header.Get("Retry-After"),
+		)
+
+		// Drain so the HTTP connection can be reused efficiently.
+		_, _ = io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+
+		if !retryable ||
+			attempt == derpibooruMaxAttempts-1 {
+			return tagRecord{}, fmt.Errorf(
+				"Derpibooru returned HTTP %d",
+				status,
+			)
+		}
+
+		if !hasRetryAfter {
+			delay = time.Second * time.Duration(
+				1<<attempt,
+			)
+		}
+
+		if err := sleepContext(
+			ctx,
+			delay,
+		); err != nil {
+			return tagRecord{}, err
 		}
 	}
 
-	if match == nil {
-		return tagRecord{}, fmt.Errorf(
-			"no exact tag match returned",
-		)
-	}
-
-	d.mu.Lock()
-	d.cache[key] = *match
-	err = d.saveLocked()
-	d.mu.Unlock()
-
-	if err != nil {
-		return tagRecord{}, err
-	}
-
-	return *match, nil
+	return tagRecord{}, fmt.Errorf(
+		"Derpibooru request attempts exhausted",
+	)
 }
 
-func (d *Derpibooru) saveLocked() error {
+func retryAfter(
+	value string,
+) (time.Duration, bool) {
+	value = strings.TrimSpace(value)
+
+	if value == "" {
+		return 0, false
+	}
+
+	if seconds, err := strconv.Atoi(value); err == nil &&
+		seconds >= 0 {
+		return time.Duration(seconds) * time.Second, true
+	}
+
+	when, err := http.ParseTime(value)
+	if err != nil {
+		return 0, false
+	}
+
+	delay := time.Until(when)
+
+	if delay < 0 {
+		delay = 0
+	}
+
+	return delay, true
+}
+
+func sleepContext(
+	ctx context.Context,
+	delay time.Duration,
+) error {
+	if delay <= 0 {
+		return nil
+	}
+
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+
+	case <-timer.C:
+		return nil
+	}
+}
+
+func (d *Derpibooru) save() error {
 	if d.cachePath == "" {
 		return nil
 	}
 
-	if err := os.MkdirAll(
-		filepath.Dir(d.cachePath),
-		0o755,
-	); err != nil {
-		return fmt.Errorf(
-			"creating taxonomy cache directory: %w",
-			err,
-		)
+	/*
+		Serialize writers. Taking the cache snapshot only after acquiring
+		saveMu prevents an older snapshot from finishing after and
+		overwriting a newer one.
+	*/
+	d.saveMu.Lock()
+	defer d.saveMu.Unlock()
+
+	d.mu.Lock()
+
+	if d.generation == d.savedGeneration {
+		d.mu.Unlock()
+		return nil
 	}
 
+	generation := d.generation
+
+	snapshot := make(
+		map[string]tagRecord,
+		len(d.cache),
+	)
+
+	for key, rec := range d.cache {
+		snapshot[key] = rec
+	}
+
+	d.mu.Unlock()
+
 	raw, err := json.MarshalIndent(
-		d.cache,
+		snapshot,
 		"",
 		"  ",
 	)
@@ -328,16 +540,23 @@ func (d *Derpibooru) saveLocked() error {
 		)
 	}
 
-	if err := os.WriteFile(
+	if err := fsx.WriteFile(
 		d.cachePath,
 		raw,
-		0o600,
 	); err != nil {
 		return fmt.Errorf(
 			"writing taxonomy cache: %w",
 			err,
 		)
 	}
+
+	d.mu.Lock()
+
+	if generation > d.savedGeneration {
+		d.savedGeneration = generation
+	}
+
+	d.mu.Unlock()
 
 	return nil
 }

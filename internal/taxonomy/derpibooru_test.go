@@ -7,7 +7,9 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"reflect"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestDerpibooruEnrich(t *testing.T) {
@@ -334,5 +336,140 @@ func TestDerpibooruTargetSemantics(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+func TestDerpibooruEnrichSerializesCacheMisses(t *testing.T) {
+	var active atomic.Int32
+	var maxActive atomic.Int32
+
+	server := httptest.NewServer(
+		http.HandlerFunc(func(
+			w http.ResponseWriter,
+			r *http.Request,
+		) {
+			n := active.Add(1)
+
+			for {
+				old := maxActive.Load()
+
+				if n <= old ||
+					maxActive.CompareAndSwap(old, n) {
+					break
+				}
+			}
+
+			defer active.Add(-1)
+
+			time.Sleep(20 * time.Millisecond)
+
+			name := r.URL.Query().Get("q")
+
+			_ = json.NewEncoder(w).Encode(
+				tagSearchResponse{
+					Tags: []tagRecord{
+						{
+							Name:            name,
+							NameInNamespace: name,
+						},
+					},
+				},
+			)
+		}),
+	)
+	defer server.Close()
+
+	resolver, err := newDerpibooru(
+		"",
+		server.URL,
+		server.Client(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	meta := map[string]any{
+		"category": "derpibooru",
+		"tags": []any{
+			"one",
+			"two",
+			"three",
+			"four",
+		},
+	}
+
+	if err := resolver.Enrich(
+		context.Background(),
+		meta,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := maxActive.Load(); got != 1 {
+		t.Fatalf(
+			"maximum concurrent requests = %d; want 1",
+			got,
+		)
+	}
+}
+
+func TestDerpibooruRetries429(t *testing.T) {
+	var calls atomic.Int32
+
+	server := httptest.NewServer(
+		http.HandlerFunc(func(
+			w http.ResponseWriter,
+			r *http.Request,
+		) {
+			if calls.Add(1) == 1 {
+				w.Header().Set("Retry-After", "0")
+				w.WriteHeader(http.StatusTooManyRequests)
+				return
+			}
+
+			name := r.URL.Query().Get("q")
+
+			_ = json.NewEncoder(w).Encode(
+				tagSearchResponse{
+					Tags: []tagRecord{
+						{
+							Name:            name,
+							NameInNamespace: name,
+						},
+					},
+				},
+			)
+		}),
+	)
+	defer server.Close()
+
+	resolver, err := newDerpibooru(
+		"",
+		server.URL,
+		server.Client(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	meta := map[string]any{
+		"category": "derpibooru",
+		"tags": []any{
+			"rainbow dash",
+		},
+	}
+
+	if err := resolver.Enrich(
+		context.Background(),
+		meta,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := calls.Load(); got != 2 {
+		t.Fatalf(
+			"request count = %d; want 2",
+			got,
+		)
 	}
 }
