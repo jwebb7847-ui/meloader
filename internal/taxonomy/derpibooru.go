@@ -782,10 +782,27 @@ func (d *Derpibooru) search(
 			"monloader Derpibooru taxonomy resolver",
 		)
 
+		requestStarted := time.Now()
+
 		resp, err := d.client.Do(req)
 		if err != nil {
+			logx.Infof(
+				"perf: taxonomy source=derpibooru, stage=http, attempt=%d, terms=%d, duration=%s, err=%v",
+				attempt+1,
+				len(strings.Split(query, " || ")),
+				time.Since(requestStarted).Round(time.Millisecond),
+				err,
+			)
 			return nil, err
 		}
+
+		logx.Infof(
+			"perf: taxonomy source=derpibooru, stage=http, attempt=%d, terms=%d, status=%d, duration=%s",
+			attempt+1,
+			len(strings.Split(query, " || ")),
+			resp.StatusCode,
+			time.Since(requestStarted).Round(time.Millisecond),
+		)
 
 		if resp.StatusCode >= 200 &&
 			resp.StatusCode < 300 {
@@ -1035,3 +1052,10 @@ func appendUnique(dst []string, values ...string) []string {
 
 	return dst
 }
+
+// Source identifies the gallery-dl category owned by this adapter.
+func (*Derpibooru) Source() string {
+	return "derpibooru"
+}
+
+var _ Adapter = (*Derpibooru)(nil)

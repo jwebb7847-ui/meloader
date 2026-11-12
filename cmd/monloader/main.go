@@ -195,9 +195,17 @@ func main() {
 		"taxonomy",
 		"derpibooru.json",
 	)
-	tagTaxonomy, err := taxonomy.NewDerpibooru(taxonomyCache)
+
+	derpibooruTaxonomy, err := taxonomy.NewDerpibooru(taxonomyCache)
 	if err != nil {
 		fatalf("loading source taxonomy cache: %v", err)
+	}
+
+	tagTaxonomy, err := taxonomy.NewRegistry(
+		derpibooruTaxonomy,
+	)
+	if err != nil {
+		fatalf("registering source taxonomy adapters: %v", err)
 	}
 
 	proc := pipeline.New(

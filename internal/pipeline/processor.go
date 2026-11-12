@@ -85,7 +85,18 @@ func (p *Processor) enrichTaxonomy(ctx context.Context, meta map[string]any) err
 	if p.taxonomy == nil {
 		return nil
 	}
-	if err := p.taxonomy.Enrich(ctx, meta); err != nil {
+
+	started := time.Now()
+	err := p.taxonomy.Enrich(ctx, meta)
+
+	logx.Infof(
+		"perf: taxonomy stage=authoritative source=%s, duration=%s, err=%v",
+		kwdict.String(meta, "category"),
+		time.Since(started).Round(time.Millisecond),
+		err,
+	)
+
+	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -162,6 +173,21 @@ func (p *Processor) ReportDropped(ctx context.Context, snap *queue.Job) {
 
 func (p *Processor) Process(ctx context.Context, job *queue.Job) error {
 	snap := job.Snapshot()
+	started := time.Now()
+
+	defer func() {
+		kind := string(snap.Kind)
+		if kind == "" {
+			kind = "download"
+		}
+
+		logx.Infof(
+			"perf: job=%d, kind=%s, stage=total, duration=%s",
+			snap.ID,
+			kind,
+			time.Since(started).Round(time.Millisecond),
+		)
+	}()
 
 	if snap.Kind == queue.KindContrib {
 		return p.processContrib(ctx, job, snap)
@@ -221,7 +247,17 @@ func (p *Processor) processDownload(ctx context.Context, job, snap *queue.Job) e
 	if limit > 0 {
 		probe = strconv.Itoa(snap.Offset+1) + "-" + strconv.Itoa(snap.Offset+limit+1)
 	}
+	resolveStarted := time.Now()
 	res, err := p.runner.Resolve(ctx, snap.URL, probe, false)
+
+	logx.Infof(
+		"perf: job=%d stage=resolve duration=%s items=%d err=%v",
+		snap.ID,
+		time.Since(resolveStarted).Round(time.Millisecond),
+		len(res.Items),
+		err,
+	)
+
 	if err != nil {
 		return abortJob(ctx, job, err)
 	}
