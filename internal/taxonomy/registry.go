@@ -9,17 +9,13 @@ import (
 	"github.com/monbooru/monloader/internal/shared/logx"
 )
 
-// Adapter owns taxonomy normalization for one source category.
+// Adapter declares ownership of one gallery-dl source category.
 //
-// Keeping this interface inside taxonomy is deliberate for now: this first
-// refactor creates an extension point without changing the wider product model.
-// If source adapters eventually own more than taxonomy, we can promote the
-// abstraction later as a separately discussed architectural change.
+// Enricher and Warmer are optional capabilities. An adapter need not implement
+// either one, so the registry can grow without making every source perform
+// taxonomy work. This remains in taxonomy until broader source semantics have
+// been discussed and their behavior specified.
 type Adapter interface {
-	Enricher
-	Warmer
-
-	// Source is the normalized gallery-dl category this adapter owns.
 	Source() string
 }
 
@@ -74,14 +70,17 @@ func (r *Registry) Enrich(
 	meta map[string]any,
 ) error {
 	adapter := r.adapterFor(meta)
-
 	if adapter == nil {
+		return nil
+	}
+	enricher, ok := adapter.(Enricher)
+	if !ok {
 		return nil
 	}
 
 	started := time.Now()
 
-	err := adapter.Enrich(
+	err := enricher.Enrich(
 		ctx,
 		meta,
 	)
@@ -101,14 +100,17 @@ func (r *Registry) Warm(
 	meta map[string]any,
 ) error {
 	adapter := r.adapterFor(meta)
-
 	if adapter == nil {
+		return nil
+	}
+	warmer, ok := adapter.(Warmer)
+	if !ok {
 		return nil
 	}
 
 	started := time.Now()
 
-	err := adapter.Warm(
+	err := warmer.Warm(
 		ctx,
 		meta,
 	)
