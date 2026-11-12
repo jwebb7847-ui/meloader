@@ -205,3 +205,59 @@ func TestRegistryRejectsEmptySource(t *testing.T) {
 		)
 	}
 }
+
+
+// A source can implement only the capability it needs. The registry must not
+// require boilerplate no-op methods for unrelated capabilities.
+type enrichOnlyAdapter struct {
+	source string
+	calls  int
+}
+
+func (a *enrichOnlyAdapter) Source() string { return a.source }
+func (a *enrichOnlyAdapter) Enrich(context.Context, map[string]any) error {
+	a.calls++
+	return nil
+}
+
+type warmOnlyAdapter struct {
+	source string
+	calls  int
+}
+
+func (a *warmOnlyAdapter) Source() string { return a.source }
+func (a *warmOnlyAdapter) Warm(context.Context, map[string]any) error {
+	a.calls++
+	return nil
+}
+
+type sourceOnlyAdapter struct{ source string }
+
+func (a *sourceOnlyAdapter) Source() string { return a.source }
+
+func TestRegistryCapabilitiesAreOptional(t *testing.T) {
+	enrich := &enrichOnlyAdapter{source: "enrich-site"}
+	warm := &warmOnlyAdapter{source: "warm-site"}
+	plain := &sourceOnlyAdapter{source: "plain-site"}
+
+	registry, err := NewRegistry(enrich, warm, plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, source := range []string{"enrich-site", "warm-site", "plain-site"} {
+		meta := map[string]any{"category": source}
+		if err := registry.Enrich(context.Background(), meta); err != nil {
+			t.Fatalf("Enrich(%s) = %v", source, err)
+		}
+		if err := registry.Warm(context.Background(), meta); err != nil {
+			t.Fatalf("Warm(%s) = %v", source, err)
+		}
+	}
+	if enrich.calls != 1 {
+		t.Fatalf("enrich-only calls = %d; want 1", enrich.calls)
+	}
+	if warm.calls != 1 {
+		t.Fatalf("warm-only calls = %d; want 1", warm.calls)
+	}
+}
