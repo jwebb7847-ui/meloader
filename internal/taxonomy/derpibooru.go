@@ -182,10 +182,11 @@ func derpibooruTarget(
 	case "species":
 		return "species", sourceName, false
 
-	case "character", "oc":
+	case "character":
 		return "character", sourceName, false
 
-	case "origin",
+	case "oc",
+		"origin",
 		"content-official",
 		"content-fanmade",
 		"error",
