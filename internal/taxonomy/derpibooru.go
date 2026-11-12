@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/monbooru/monloader/internal/shared/fsx"
+	"github.com/monbooru/monloader/internal/shared/logx"
 )
 
 const (
@@ -90,21 +91,81 @@ func newDerpibooru(
 		return d, nil
 	}
 
-	raw, err := os.ReadFile(cachePath)
-	switch {
-	case os.IsNotExist(err):
-		return d, nil
-	case err != nil:
-		return nil, fmt.Errorf("reading taxonomy cache: %w", err)
-	case len(raw) == 0:
-		return d, nil
+	cache, err := loadDerpibooruCache(cachePath)
+	if err != nil {
+		return nil, err
 	}
-
-	if err := json.Unmarshal(raw, &d.cache); err != nil {
-		return nil, fmt.Errorf("decoding taxonomy cache: %w", err)
-	}
+	d.cache = cache
 
 	return d, nil
+}
+
+func loadDerpibooruCache(
+	cachePath string,
+) (map[string]tagRecord, error) {
+	cache := map[string]tagRecord{}
+
+	if strings.TrimSpace(cachePath) == "" {
+		return cache, nil
+	}
+
+	raw, err := os.ReadFile(cachePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return cache, nil
+		}
+
+		return nil, fmt.Errorf(
+			"reading Derpibooru taxonomy cache: %w",
+			err,
+		)
+	}
+
+	if err := json.Unmarshal(raw, &cache); err == nil {
+		if cache == nil {
+			cache = map[string]tagRecord{}
+		}
+
+		return cache, nil
+	} else {
+		quarantined, qerr := quarantineCorruptCache(
+			cachePath,
+		)
+		if qerr != nil {
+			return nil, fmt.Errorf(
+				"decoding Derpibooru taxonomy cache: %v; preserving corrupt cache: %w",
+				err,
+				qerr,
+			)
+		}
+
+		logx.Warnf(
+			"taxonomy: corrupt Derpibooru cache moved to %q; rebuilding it: %v",
+			quarantined,
+			err,
+		)
+
+		return map[string]tagRecord{}, nil
+	}
+}
+
+func quarantineCorruptCache(
+	cachePath string,
+) (string, error) {
+	stamp := time.Now().
+		UTC().
+		Format("20060102T150405.000000000Z")
+
+	target := cachePath + ".corrupt-" + stamp
+
+	if err := os.Rename(
+		cachePath,
+		target,
+	); err != nil {
+		return "", err
+	}
+
+	return target, nil
 }
 
 func (d *Derpibooru) Warm(
