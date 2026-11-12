@@ -14,6 +14,15 @@ import (
 // splits only when it ends every field but the last: realbooru's ", " join.
 func parseTagField(v any) []string {
 	switch t := v.(type) {
+	case []string:
+		out := make([]string, 0, len(t))
+		for _, s := range t {
+			if s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+
 	case []any:
 		out := make([]string, 0, len(t))
 		for _, e := range t {

@@ -30,6 +30,7 @@ import (
 	"github.com/monbooru/monloader/internal/shared/logx"
 	"github.com/monbooru/monloader/internal/similarity"
 	"github.com/monbooru/monloader/internal/sitestate"
+	"github.com/monbooru/monloader/internal/taxonomy"
 )
 
 type PTRService interface {
@@ -52,11 +53,22 @@ type Processor struct {
 	siteState *sitestate.Tracker
 	ptr       PTRService
 	sim       SimilarityService
+	taxonomy  taxonomy.Enricher
 	books     *queue.Store
 }
 
-func New(runner gdl.Runner, mapper *mapping.Mapper, client *monbooru.Client, cfg *config.Provider, workRoot string, siteState *sitestate.Tracker, ptr PTRService, sim SimilarityService) *Processor {
-	return &Processor{runner: runner, mapper: mapper, client: client, cfg: cfg, workRoot: workRoot, siteState: siteState, ptr: ptr, sim: sim}
+func New(runner gdl.Runner, mapper *mapping.Mapper, client *monbooru.Client, cfg *config.Provider, workRoot string, siteState *sitestate.Tracker, ptr PTRService, sim SimilarityService, taxonomyEnricher taxonomy.Enricher) *Processor {
+	return &Processor{
+		runner:    runner,
+		mapper:    mapper,
+		client:    client,
+		cfg:       cfg,
+		workRoot:  workRoot,
+		siteState: siteState,
+		ptr:       ptr,
+		sim:       sim,
+		taxonomy:  taxonomyEnricher,
+	}
 }
 
 var (
@@ -68,6 +80,21 @@ var (
 )
 
 func (p *Processor) UseStore(st *queue.Store) { p.books = st }
+func (p *Processor) enrichTaxonomy(ctx context.Context, meta map[string]any) error {
+	if p.taxonomy == nil {
+		return nil
+	}
+	if err := p.taxonomy.Enrich(ctx, meta); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return &outcome.CodedError{
+			Code: outcome.ErrCodeMappingFailed,
+			Msg:  "source taxonomy: " + err.Error(),
+		}
+	}
+	return nil
+}
 
 func (p *Processor) ReportDropped(ctx context.Context, snap *queue.Job) {
 	switch snap.Kind {
@@ -231,6 +258,9 @@ func (p *Processor) processMetadata(ctx context.Context, job *queue.Job, snap *q
 	meta, err := p.runner.FirstPost(ctx, snap.URL)
 	if err == nil {
 		err = p.manyPostsErr(ctx, snap.URL, meta)
+	}
+	if err == nil {
+		err = p.enrichTaxonomy(ctx, meta)
 	}
 	if ctx.Err() != nil {
 		return ctx.Err()
@@ -731,6 +761,14 @@ func (p *Processor) processItems(ctx context.Context, job *queue.Job, entries []
 			skipItem(job, i, outcome.SkippedUnsupported, "")
 			continue
 		}
+		// Source taxonomy is resolved before blacklist and mapping so category-
+		// qualified rules see the same metadata that reaches monbooru.
+		if err := p.enrichTaxonomy(ctx, d.Meta); err != nil {
+			removeScratch(d.Path)
+			failItem(job, i, errorCode(err), err.Error())
+			continue
+		}
+
 		// The sidecar is the first sight of a flat-tag site's categories.
 		if note, hit := p.mapper.Blacklisted(d.Meta); hit {
 			removeScratch(d.Path)
@@ -743,6 +781,7 @@ func (p *Processor) processItems(ctx context.Context, job *queue.Job, entries []
 			continue
 		}
 		pf := p.mapper.Map(d.Meta)
+
 		labelFrom := kwdict.String(d.Meta, "category")
 		if labelFrom == mapping.CategoryDirectlink {
 			labelFrom = kwdict.String(d.Meta, "domain")
