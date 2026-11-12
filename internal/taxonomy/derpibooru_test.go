@@ -3,6 +3,7 @@ package taxonomy
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -472,4 +473,109 @@ func TestDerpibooruRetries429(t *testing.T) {
 			got,
 		)
 	}
+}
+
+func TestDerpibooruWarmPreloadsWithoutMutation(t *testing.T) {
+	var calls atomic.Int32
+
+	records := map[string]tagRecord{
+		"rainbow dash": {
+			Name:            "rainbow dash",
+			Category:        "character",
+			NameInNamespace: "rainbow dash",
+		},
+		"pony": {
+			Name:            "pony",
+			Category:        "species",
+			NameInNamespace: "pony",
+		},
+	}
+
+	server := httptest.NewServer(
+		http.HandlerFunc(func(
+			w http.ResponseWriter,
+			r *http.Request,
+		) {
+			calls.Add(1)
+
+			name := r.URL.Query().Get("q")
+			rec, ok := records[name]
+
+			if !ok {
+				http.Error(w, "unexpected tag", http.StatusBadRequest)
+				return
+			}
+
+			_ = json.NewEncoder(w).Encode(
+				tagSearchResponse{
+					Tags: []tagRecord{rec},
+				},
+			)
+		}),
+	)
+	defer server.Close()
+
+	resolver, err := newDerpibooru(
+		"",
+		server.URL,
+		server.Client(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	meta := map[string]any{
+		"category": "derpibooru",
+		"tags": []any{
+			"rainbow dash",
+			"pony",
+		},
+	}
+
+	before := fmt.Sprint(meta["tags"])
+
+	if err := resolver.Warm(
+		context.Background(),
+		meta,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := fmt.Sprint(meta["tags"]); got != before {
+		t.Fatalf(
+			"Warm mutated tags: got %s, want %s",
+			got,
+			before,
+		)
+	}
+
+	if got := calls.Load(); got != 2 {
+		t.Fatalf(
+			"Warm request count = %d; want 2",
+			got,
+		)
+	}
+
+	if err := resolver.Enrich(
+		context.Background(),
+		meta,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := calls.Load(); got != 2 {
+		t.Fatalf(
+			"Enrich made new requests after Warm: calls = %d, want 2",
+			got,
+		)
+	}
+
+	assertTags(
+		t,
+		meta["tags"],
+		[]string{
+			"character:rainbow dash",
+			"species:pony",
+		},
+	)
 }

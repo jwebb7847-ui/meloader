@@ -26,6 +26,12 @@ type Enricher interface {
 	Enrich(context.Context, map[string]any) error
 }
 
+// Warmer is optional. It lets the pipeline populate source-taxonomy caches
+// while media is downloading without changing metadata or committing output.
+type Warmer interface {
+	Warm(context.Context, map[string]any) error
+}
+
 type tagCall struct {
 	done chan struct{}
 	rec  tagRecord
@@ -99,6 +105,27 @@ func newDerpibooru(
 	}
 
 	return d, nil
+}
+
+func (d *Derpibooru) Warm(
+	ctx context.Context,
+	meta map[string]any,
+) error {
+	if strings.ToLower(strings.TrimSpace(stringValue(meta["category"]))) != "derpibooru" {
+		return nil
+	}
+
+	for _, sourceName := range tagStrings(meta["tags"]) {
+		if _, err := d.resolve(ctx, sourceName); err != nil {
+			return fmt.Errorf(
+				"warming Derpibooru tag %q: %w",
+				sourceName,
+				err,
+			)
+		}
+	}
+
+	return nil
 }
 
 func (d *Derpibooru) Enrich(

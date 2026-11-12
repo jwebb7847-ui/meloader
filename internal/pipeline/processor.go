@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/monbooru/monloader/internal/config"
@@ -94,6 +95,57 @@ func (p *Processor) enrichTaxonomy(ctx context.Context, meta map[string]any) err
 		}
 	}
 	return nil
+}
+
+func (p *Processor) warmTaxonomy(
+	ctx context.Context,
+	resolved []gdl.Item,
+	blacklisted map[int]string,
+) func() {
+	warmer, ok := p.taxonomy.(taxonomy.Warmer)
+	if !ok || len(resolved) == 0 {
+		return func() {}
+	}
+
+	warmCtx, cancel := context.WithCancel(ctx)
+
+	var wg sync.WaitGroup
+
+	for i := range resolved {
+		if _, skipped := blacklisted[i]; skipped {
+			continue
+		}
+
+		meta := maps.Clone(resolved[i].Meta)
+		if len(meta) == 0 {
+			continue
+		}
+
+		postID := kwdict.ID(meta)
+
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			if err := warmer.Warm(
+				warmCtx,
+				meta,
+			); err != nil &&
+				warmCtx.Err() == nil {
+				logx.Infof(
+					"taxonomy warm post %s: %v",
+					postID,
+					err,
+				)
+			}
+		}()
+	}
+
+	return func() {
+		cancel()
+		wg.Wait()
+	}
 }
 
 func (p *Processor) ReportDropped(ctx context.Context, snap *queue.Job) {
@@ -467,6 +519,16 @@ func (p *Processor) fetch(ctx context.Context, job, snap *queue.Job, resolved []
 		blacklisted = p.blacklistedRows(job, resolved)
 	}
 	fetchRange, anyKept := keptRange(rng, snap.Offset, len(resolved), blacklisted)
+
+	stopTaxonomyWarm := func() {}
+	if anyKept {
+		stopTaxonomyWarm = p.warmTaxonomy(
+			ctx,
+			resolved,
+			blacklisted,
+		)
+	}
+	defer stopTaxonomyWarm()
 
 	workDir := filepath.Join(p.workRoot, fmt.Sprintf("job-%d", snap.ID))
 	if mkErr := os.MkdirAll(workDir, 0o755); mkErr != nil {
