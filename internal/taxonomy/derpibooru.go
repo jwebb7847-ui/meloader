@@ -111,12 +111,39 @@ func (d *Derpibooru) Warm(
 	ctx context.Context,
 	meta map[string]any,
 ) error {
-	if strings.ToLower(strings.TrimSpace(stringValue(meta["category"]))) != "derpibooru" {
+	if strings.ToLower(strings.TrimSpace(
+		stringValue(meta["category"]),
+	)) != "derpibooru" {
 		return nil
 	}
 
-	for _, sourceName := range tagStrings(meta["tags"]) {
-		if _, err := d.resolve(ctx, sourceName); err != nil {
+	sourceTags := tagStrings(meta["tags"])
+	if len(sourceTags) == 0 {
+		return nil
+	}
+
+	/*
+		Philomena includes tag_ids alongside tags. Resolve all uncached
+		taxonomy records in batches first; fall back to exact-name lookup
+		only for records the batch response did not provide.
+	*/
+	if err := d.prefillByIDs(
+		ctx,
+		sourceTags,
+		meta["tag_ids"],
+	); err != nil {
+		return err
+	}
+
+	for _, sourceName := range sourceTags {
+		if _, ok := d.cached(sourceName); ok {
+			continue
+		}
+
+		if _, err := d.resolve(
+			ctx,
+			sourceName,
+		); err != nil {
 			return fmt.Errorf(
 				"warming Derpibooru tag %q: %w",
 				sourceName,
@@ -139,6 +166,10 @@ func (d *Derpibooru) Enrich(
 	sourceTags := tagStrings(meta["tags"])
 	if len(sourceTags) == 0 {
 		return nil
+	}
+
+	if err := d.Warm(ctx, meta); err != nil {
+		return err
 	}
 
 	/*
@@ -294,6 +325,225 @@ func afterNamespace(name string) string {
 	return strings.TrimSpace(rest)
 }
 
+func (d *Derpibooru) prefillByIDs(
+	ctx context.Context,
+	sourceTags []string,
+	rawIDs any,
+) error {
+	ids := tagIDStrings(rawIDs)
+
+	/*
+		The tag and tag_id arrays are positional siblings in Philomena.
+		If their shapes do not agree, do not guess; the caller will fall
+		back to the exact-name resolver.
+	*/
+	if len(ids) != len(sourceTags) {
+		return nil
+	}
+
+	const batchSize = 50
+
+	type wanted struct {
+		id   string
+		name string
+	}
+
+	missing := make([]wanted, 0, len(sourceTags))
+
+	for i, sourceName := range sourceTags {
+		if _, ok := d.cached(sourceName); ok {
+			continue
+		}
+
+		if ids[i] == "" {
+			continue
+		}
+
+		missing = append(
+			missing,
+			wanted{
+				id:   ids[i],
+				name: sourceName,
+			},
+		)
+	}
+
+	for start := 0; start < len(missing); start += batchSize {
+		end := start + batchSize
+		if end > len(missing) {
+			end = len(missing)
+		}
+
+		chunk := missing[start:end]
+		chunkIDs := make([]string, 0, len(chunk))
+
+		for _, item := range chunk {
+			chunkIDs = append(
+				chunkIDs,
+				item.id,
+			)
+		}
+
+		records, err := d.fetchMany(
+			ctx,
+			chunkIDs,
+		)
+		if err != nil {
+			return fmt.Errorf(
+				"batch resolving Derpibooru taxonomy: %w",
+				err,
+			)
+		}
+
+		d.storeRecords(records)
+	}
+
+	return nil
+}
+
+func (d *Derpibooru) cached(
+	name string,
+) (tagRecord, bool) {
+	key := normalizeKey(name)
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	rec, ok := d.cache[key]
+	return rec, ok
+}
+
+func (d *Derpibooru) storeRecords(
+	records []tagRecord,
+) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	for _, rec := range records {
+		key := normalizeKey(rec.Name)
+		if key == "" {
+			continue
+		}
+
+		old, exists := d.cache[key]
+
+		if exists && old == rec {
+			continue
+		}
+
+		d.cache[key] = rec
+		d.generation++
+	}
+}
+
+func tagIDStrings(v any) []string {
+	switch values := v.(type) {
+	case []any:
+		out := make([]string, len(values))
+
+		for i, value := range values {
+			out[i] = tagIDString(value)
+		}
+
+		return out
+
+	case []string:
+		out := make([]string, len(values))
+
+		for i, value := range values {
+			out[i] = tagIDString(value)
+		}
+
+		return out
+
+	case []int:
+		out := make([]string, len(values))
+
+		for i, value := range values {
+			out[i] = tagIDString(value)
+		}
+
+		return out
+
+	case []int64:
+		out := make([]string, len(values))
+
+		for i, value := range values {
+			out[i] = tagIDString(value)
+		}
+
+		return out
+	}
+
+	return nil
+}
+
+func tagIDString(v any) string {
+	switch value := v.(type) {
+	case string:
+		value = strings.TrimSpace(value)
+
+		if n, err := strconv.ParseInt(
+			value,
+			10,
+			64,
+		); err == nil && n > 0 {
+			return strconv.FormatInt(n, 10)
+		}
+
+	case json.Number:
+		if n, err := value.Int64(); err == nil && n > 0 {
+			return strconv.FormatInt(n, 10)
+		}
+
+	case int:
+		if value > 0 {
+			return strconv.Itoa(value)
+		}
+
+	case int32:
+		if value > 0 {
+			return strconv.FormatInt(int64(value), 10)
+		}
+
+	case int64:
+		if value > 0 {
+			return strconv.FormatInt(value, 10)
+		}
+
+	case uint:
+		if value > 0 {
+			return strconv.FormatUint(uint64(value), 10)
+		}
+
+	case uint32:
+		if value > 0 {
+			return strconv.FormatUint(uint64(value), 10)
+		}
+
+	case uint64:
+		if value > 0 {
+			return strconv.FormatUint(value, 10)
+		}
+
+	case float64:
+		n := int64(value)
+
+		if n > 0 && value == float64(n) {
+			return strconv.FormatInt(n, 10)
+		}
+
+	case float32:
+		n := int64(value)
+
+		if n > 0 && value == float32(n) {
+			return strconv.FormatInt(n, 10)
+		}
+	}
+
+	return ""
+}
+
 func (d *Derpibooru) resolve(
 	ctx context.Context,
 	name string,
@@ -356,10 +606,70 @@ func (d *Derpibooru) fetch(
 	ctx context.Context,
 	name string,
 ) (tagRecord, error) {
+	records, err := d.search(
+		ctx,
+		name,
+		50,
+	)
+	if err != nil {
+		return tagRecord{}, err
+	}
+
+	for i := range records {
+		if strings.EqualFold(
+			strings.TrimSpace(records[i].Name),
+			strings.TrimSpace(name),
+		) {
+			return records[i], nil
+		}
+	}
+
+	return tagRecord{}, fmt.Errorf(
+		"no exact tag match returned",
+	)
+}
+
+func (d *Derpibooru) fetchMany(
+	ctx context.Context,
+	ids []string,
+) ([]tagRecord, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	terms := make([]string, 0, len(ids))
+
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+
+		terms = append(
+			terms,
+			"id:"+id,
+		)
+	}
+
+	if len(terms) == 0 {
+		return nil, nil
+	}
+
+	return d.search(
+		ctx,
+		strings.Join(terms, " || "),
+		len(terms),
+	)
+}
+
+func (d *Derpibooru) search(
+	ctx context.Context,
+	query string,
+	perPage int,
+) ([]tagRecord, error) {
 	/*
-		Derpibooru rate-limits bursts aggressively. Keep actual source
-		requests serialized; the cache and in-flight map still prevent
-		repeated work across jobs.
+		All source requests share the same slot. A normal post now uses
+		one batch request instead of one request per tag, while fallback
+		requests retain the same rate-limit protection.
 	*/
 	select {
 	case d.slots <- struct{}{}:
@@ -368,18 +678,31 @@ func (d *Derpibooru) fetch(
 		}()
 
 	case <-ctx.Done():
-		return tagRecord{}, ctx.Err()
+		return nil, ctx.Err()
 	}
 
 	u, err := url.Parse(
 		d.baseURL + "/api/v1/json/search/tags",
 	)
 	if err != nil {
-		return tagRecord{}, err
+		return nil, err
+	}
+
+	if perPage < 1 {
+		perPage = 1
+	}
+
+	if perPage > 50 {
+		perPage = 50
 	}
 
 	q := u.Query()
-	q.Set("q", name)
+	q.Set("q", query)
+	q.Set("page", "1")
+	q.Set(
+		"per_page",
+		strconv.Itoa(perPage),
+	)
 	u.RawQuery = q.Encode()
 
 	for attempt := 0; attempt < derpibooruMaxAttempts; attempt++ {
@@ -390,7 +713,7 @@ func (d *Derpibooru) fetch(
 			nil,
 		)
 		if err != nil {
-			return tagRecord{}, err
+			return nil, err
 		}
 
 		req.Header.Set(
@@ -400,7 +723,7 @@ func (d *Derpibooru) fetch(
 
 		resp, err := d.client.Do(req)
 		if err != nil {
-			return tagRecord{}, err
+			return nil, err
 		}
 
 		if resp.StatusCode >= 200 &&
@@ -414,24 +737,13 @@ func (d *Derpibooru) fetch(
 			resp.Body.Close()
 
 			if err != nil {
-				return tagRecord{}, fmt.Errorf(
+				return nil, fmt.Errorf(
 					"decoding Derpibooru response: %w",
 					err,
 				)
 			}
 
-			for i := range body.Tags {
-				if strings.EqualFold(
-					strings.TrimSpace(body.Tags[i].Name),
-					strings.TrimSpace(name),
-				) {
-					return body.Tags[i], nil
-				}
-			}
-
-			return tagRecord{}, fmt.Errorf(
-				"no exact tag match returned",
-			)
+			return body.Tags, nil
 		}
 
 		status := resp.StatusCode
@@ -443,13 +755,15 @@ func (d *Derpibooru) fetch(
 			resp.Header.Get("Retry-After"),
 		)
 
-		// Drain so the HTTP connection can be reused efficiently.
-		_, _ = io.Copy(io.Discard, resp.Body)
+		_, _ = io.Copy(
+			io.Discard,
+			resp.Body,
+		)
 		resp.Body.Close()
 
 		if !retryable ||
 			attempt == derpibooruMaxAttempts-1 {
-			return tagRecord{}, fmt.Errorf(
+			return nil, fmt.Errorf(
 				"Derpibooru returned HTTP %d",
 				status,
 			)
@@ -465,11 +779,11 @@ func (d *Derpibooru) fetch(
 			ctx,
 			delay,
 		); err != nil {
-			return tagRecord{}, err
+			return nil, err
 		}
 	}
 
-	return tagRecord{}, fmt.Errorf(
+	return nil, fmt.Errorf(
 		"Derpibooru request attempts exhausted",
 	)
 }

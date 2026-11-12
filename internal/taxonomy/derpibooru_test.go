@@ -579,3 +579,97 @@ func TestDerpibooruWarmPreloadsWithoutMutation(t *testing.T) {
 		},
 	)
 }
+
+func TestDerpibooruEnrichBatchesTagIDs(t *testing.T) {
+	var calls atomic.Int32
+
+	server := httptest.NewServer(
+		http.HandlerFunc(func(
+			w http.ResponseWriter,
+			r *http.Request,
+		) {
+			calls.Add(1)
+
+			got := r.URL.Query().Get("q")
+			want := "id:101 || id:102 || id:103"
+
+			if got != want {
+				http.Error(
+					w,
+					"unexpected query: "+got,
+					http.StatusBadRequest,
+				)
+				return
+			}
+
+			_ = json.NewEncoder(w).Encode(
+				tagSearchResponse{
+					Tags: []tagRecord{
+						{
+							Name:            "cute",
+							NameInNamespace: "cute",
+						},
+						{
+							Name:            "rainbow dash",
+							Category:        "character",
+							NameInNamespace: "rainbow dash",
+						},
+						{
+							Name:            "pony",
+							Category:        "species",
+							NameInNamespace: "pony",
+						},
+					},
+				},
+			)
+		}),
+	)
+	defer server.Close()
+
+	resolver, err := newDerpibooru(
+		"",
+		server.URL,
+		server.Client(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	meta := map[string]any{
+		"category": "derpibooru",
+		"tags": []any{
+			"cute",
+			"rainbow dash",
+			"pony",
+		},
+		"tag_ids": []any{
+			float64(101),
+			float64(102),
+			float64(103),
+		},
+	}
+
+	if err := resolver.Enrich(
+		context.Background(),
+		meta,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := calls.Load(); got != 1 {
+		t.Fatalf(
+			"request count = %d; want 1 batch request",
+			got,
+		)
+	}
+
+	assertTags(
+		t,
+		meta["tags"],
+		[]string{
+			"cute",
+			"character:rainbow dash",
+			"species:pony",
+		},
+	)
+}
