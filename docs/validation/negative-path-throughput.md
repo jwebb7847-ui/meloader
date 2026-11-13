@@ -189,6 +189,24 @@ The operator submitted one post through the **running Meloader audit UI**:
 
 **Result:** The second independent acquisition family, Safebooru/Gelbooru-v02, has **passed full positive end-to-end acceptance**, following the earlier Derpibooru/Philomena pass. **Not** yet proved: repeated/multi-post real workload throughput, all source-rating variants, live invalid-rating rejection against a running Mebooru (the mock-HTTP negative tests do pass), or e621/Danbooru network transport access.
 
+### Bounded five-post Safebooru audit — download/upload PASS, one tag warning pending
+
+User ran Meloader's **`up to 5`** queue submission for `https://safebooru.org/index.php?page=post&s=list&tags=all` to **`Audit_A`** on 2026-11-13. Screenshot of expanded queue confirms **`succeeded`**, **`5 created`**, **`more available`**, five item rows, zero apparent failures/skips, and no change to gallery routing.
+
+| Source post | Outcome | Tags reported sent | Warning |
+| --- | --- | ---: | --- |
+| 7303986 | created | 52 | **1 tag warning**; truncated as `tag ...: invalid tag name: name must c...` |
+| 7303985 | created | 31 | none shown |
+| 7303984 | created | 30 | none shown |
+| 7303983 | created | 30 | none shown |
+| 7303982 | created | 64 | none shown |
+
+Total **207 tags reported sent**. Important: `TagsSent` is assigned from **`len(sent.Tags)`** in Meloader `internal/pipeline/processor.go`, **before** Mebooru's validator decides acceptance. Thus these are tags **submitted**, not a confirmed count of persisted tags. The one warning for `7303986` likely indicates rejection of a punctuation-only tag, visually resembling `...`, but the exact name/warning requires the operator to hover the UI warning and copy the full title text. Mebooru's `tags.ValidateTagName` in `internal/tags/tags_crud.go` intentionally rejects names consisting solely of decoration such as `...` (requires at least one meaningful rune). **Do not silently normalize or change that validation policy** without discussion. Check one or two newly imported Mebooru image-specific detail sidebars, including post `7303986`, to confirm category/rating persistence before marking the full five-image metadata acceptance green.
+
+Operator stopwatch estimate: **~12 seconds click-to-finish** (about **10–11 seconds from first downloading status**). This corresponds to ~0.42 posts/sec or **25 successfully created images/minute** for this *one five-post job*, with wall-time measurement uncertainty. Do **not** extrapolate to sustained rate, assume no server-side throttling, or compare directly to the synthetic localhost HTTP benchmark. Additional source-dependent metadata requests, image sizes and tag counts were not measured.
+
+**Next gate:** hover `1 tag warning` or the adjacent truncated text in Meloader UI to obtain the exact warning (the `[debug]` button **re-runs an extractor** and is not needed); inspect image-specific persisted tags/rating in Mebooru for `7303986` and at least one clean companion item. If the warning is the deliberate rejection of `...` and other metadata checks pass, advance to a **bounded 20-post** real workflow as a separate test.
+
 ## 4. Staged live workload, not a bulk leap
 
 After the one-post cross-family import works:
@@ -208,6 +226,7 @@ For every run, record the source URL/query, gallery, two running server commit S
 - [x] Metadata-only source contrast: Derpibooru original and retest consistent, Safebooru post 1169132 confirmed as a single post with native `s` and five categorized tag fields; e621/Danbooru remain reset-blocked
 - [x] Safebooru image HEAD preflight passed with verified curl TLS, `image/jpeg`, `247882` bytes (0.24 MiB); Python 3.12's own default CA-file lookup was unresolved and its urllib HEAD failed certificate verification
 - [x] One live alternate-family Safebooru/Gelbooru-v02 post imported to Audit_A with `rating:general`, all 10 categorized per-image tags and source provenance (Mebooru ID 8); Danbooru-specific live rating `s -> sensitive` remains unverified due to transport reset
-- [ ] Bounded 5-post and 20-post live workloads accepted and measured
+- [x] Five-post Safebooru acquisition to Audit_A: all 5 created, ~12 s wall-time, 207 tags submitted and 1 source-tag warning; **per-image metadata verification and exact warning still pending**
+- [ ] Bounded 20-post live workload accepted, measured and checked for source metadata fidelity
 - [ ] Live e621 categorized extractor confirmation (deferred for transport reset; do not block all other testing)
 - [ ] Source taxonomy semantic decisions beyond the approved rating-integrity distinction (discuss before changes)
