@@ -146,7 +146,7 @@ For every run, record the source URL/query, gallery, two running server commit S
 - [x] Positive Derpibooru source -> Mebooru Audit_A -> per-image metadata, tags and original source persisted
 - [x] Reverse Mebooru -> Meloader authenticated health restored with existing bearer token
 - [x] Expanded mixed-batch rejection and normal source-rating cases passed Go race+vet CI (run 43356175480)
-- [ ] Repeat expanded negative-path tests locally on Apple Silicon
+- [x] Local Apple M5 negative-path/rating tests passed in mapping and pipeline at commit `41c954b` (`go test -race`, 1.533s/1.564s)
 - [x] Execute local Apple M5 loopback HTTP benchmark: median 20=2,118 posts/s, 200=6,130 posts/s, 1,000=5,840 posts/s; synthetic 16-KiB files and mock Mebooru only
 - [ ] One live Danbooru (or another distinct-rated-family) post accepted with correct native/mapped rating
 - [ ] Bounded 5-post and 20-post live workloads accepted and measured
