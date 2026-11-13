@@ -153,6 +153,18 @@ PY
 
 If the detail also shows a connection reset, classify both unavailable source tests as **network-transport blocked** without claiming an origin. The third candidate is gallery-dl's pinned Safebooru/Gelbooru-v02 fixture `https://safebooru.org/index.php?page=post&s=view&id=1169132`. A single metadata-only probe was run using isolated gallery-dl 1.32.19 and `-o extractor.safebooru.tags=true`; its parser said **`STOP: Expected exactly one post.`** That result is **inconclusive**, not a confirmed HTTP failure. The pinned gallery-dl implementation emits both `Message.Directory` and `Message.Url` for each booru post, with post metadata in **both** messages. The previous script incorrectly enforced `len(posts) == 1`, likely rejecting the two expected messages. Inspect the **already saved** Safebooru JSON and group messages by unique `(category, id)` rather than counting post messages. For a fresh Derpibooru comparison, request its same known single-post URL `https://derpibooru.org/images/3796956` with `--config-ignore --dump-json` **once** and compare message type counts, unique post IDs, rating and category field names; no image download or import. If Safebooru has one unique post and no error, its metadata-only extraction likely passed. Before any import, check its native rating, taxonomy completeness, file size and per-site override to `Audit_A`. Do not retry blocked hosts repeatedly.
 
+### Controlled comparison outcome: Derpibooru and Safebooru both reachable
+
+The operator reran **one** metadata-only Derpibooru request for previously validated post `3796956` using gallery-dl 1.32.19. Both the original and fresh Derpibooru payloads were `Message.Directory=1, Message.Url=1`, one distinct post, rating field absent, rating tag `safe`, **19** tags and no `tags_*` fields (correct for the Philomena-family extractor; taxonomy enrichment comes later).
+
+The previously saved **Safebooru** metadata-only payload was also `Message.Directory=1, Message.Url=1`, **one** distinct post `1169132`, native rating field `s`, **9** flat tags, and categorized fields `tags_artist`, `tags_character`, `tags_copyright`, `tags_general`, `tags_metadata`. Therefore its earlier `Expected exactly one post` was purely a faulty test parser counting two messages for one post. It was **a successful live extractor test**, with no image imported yet. Its `gelbooru_v02` family maps native `s` to `rating:general`, and the mapper maps `tags_metadata` to Mebooru's `meta`.
+
+**e621** and **Danbooru** each had exactly one embedded `HttpError`, zero post metadata and the same connection reset: `ConnectionError: ('Connection aborted.', ConnectionResetError(54, 'Connection reset by peer'))`. Neither error establishes which peer or intermediary caused the reset. The working boorus make a general network outage or universally broken gallery-dl install unlikely. Leave those two sources deferred rather than repeatedly retrying.
+
+A follow-up **test-only regression** covers Safebooru's string-valued categorized fields and native `s` rating at the pipeline-to-mock-HTTP upload boundary. See `internal/pipeline/rating_upload_integration_test.go`, case `safebooru real extractor shape with categorized string fields`. This does **not** change runtime behavior.
+
+**Next acceptance gate:** confirm the configured `safebooru` site gallery override (if any) resolves to `Audit_A`; verify saved post `1169132` has the exact expected identity, `s` rating, nonempty categorized fields, and acceptable media size before importing **one** post in Meloader. Check the resulting image's own detail sidebar and source afterward. Meloader's managed configuration already enables `tags: true` for gelbooru_v02-family sites via `internal/gdl/config.go`.
+
 **Routing guard:** before any Danbooru import, check that Meloader's `[monbooru].default_gallery` plus any `[[sites]]` override for `danbooru` resolves to **Audit_A**, not `home` or `Audit_B`. The existing successful Derpibooru override check does *not* prove Danbooru's routing.
 
 Once metadata and routing both pass, import **only this one post** through Meloader using `up to 1`. Confirm `1 created` or a clearly distinguished duplicate; inspect the individual Mebooru image detail for `rating:sensitive`, categorized tags and source provenance. Do not turn a failed source into a generic/unrated import.
@@ -173,6 +185,7 @@ For every run, record the source URL/query, gallery, two running server commit S
 - [x] Expanded mixed-batch rejection and normal source-rating cases passed Go race+vet CI (run 43356175480)
 - [x] Local Apple M5 negative-path/rating tests passed in mapping and pipeline at commit `41c954b` (`go test -race`, 1.533s/1.564s)
 - [x] Execute local Apple M5 loopback HTTP benchmark: median 20=2,118 posts/s, 200=6,130 posts/s, 1,000=5,840 posts/s; synthetic 16-KiB files and mock Mebooru only
+- [x] Metadata-only source contrast: Derpibooru original and retest consistent, Safebooru post 1169132 confirmed as a single post with native `s` and five categorized tag fields; e621/Danbooru remain reset-blocked
 - [ ] One live Danbooru (or another distinct-rated-family) post accepted with correct native/mapped rating
 - [ ] Bounded 5-post and 20-post live workloads accepted and measured
 - [ ] Live e621 categorized extractor confirmation (deferred for transport reset; do not block all other testing)
