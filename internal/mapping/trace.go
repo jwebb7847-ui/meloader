@@ -92,6 +92,12 @@ func (m *Mapper) Trace(meta map[string]any) PostTrace {
 	if m.SuspectFlattenedTags(meta) {
 		t.Refused = FlattenedTagsMsg
 	}
+	if err := m.ValidateSourceRating(meta); err != nil {
+		if t.Refused != "" {
+			t.Refused += "; "
+		}
+		t.Refused += "source rating: " + err.Error()
+	}
 	for _, rule := range rules {
 		if name, filed := rule.misfiled(tags); filed != "" {
 			t.Warnings = append(t.Warnings, fmt.Sprintf("blacklist rule %q misses: this site files %s under %s", rule.text, name, filed))
