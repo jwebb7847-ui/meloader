@@ -205,6 +205,10 @@ Stop it with Ctrl+C. Do not use an older compiled binary or kill an unknown proc
 
 **Local audit result (2026-11-13) — PASSED.** The operator ran `TestRatingIntegrityAgainstLocalAuditGallery` with `-race` from detached Meloader revision `ed6477fe9d2c45635a6515a7458b98568434d440` on macOS, against the running Mebooru audit server. The malformed Safebooru item failed with `mapping_failed: source rating: safebooru returned an unrecognized rating "not-a-rating"`. The proxy counted exactly **one** upload attempt, the valid control, and a read-back from `Audit_A` matched the generated control's SHA-256 (image ID `7` in this run). The test also passed its scratch-cleanup assertions. The reported `0.02 s` test duration is for the local synthetic check. [Procedure and workload results](negative-path-throughput.md#5-malformed-source-rating-against-the-running-audit-gallery).
 
+## Live source taxonomy trace (2026-11-13)
+
+**PASSED.** In Meloader at `d68d251`, the operator traced Derpibooru post `3796956` after restarting the audit Mebooru instance on port 8455. The trace previewed **19 tags** and populated the `Audit_A` resolution column. The visible rows show `kept`, including `character:twilight_sparkle`, `species:human`, `species:pony`, and `meta:equestria_girls`. The source-tag column retained the spelling `character:twilight sparkle`, while the mapped category was `character` and the outgoing tag used an underscore. This was a preview and did not download or import the image.
+
 ## Remaining gates
 
 - [x] Full Go race detector and vet on code change `16d4908`
@@ -215,6 +219,7 @@ Stop it with Ctrl+C. Do not use an older compiled binary or kill an unknown proc
 - [x] Verify the image-specific `rating:general` and all 19 tags: the image detail sidebar is built from `GetImageTags(7)`, with numbers reflecting gallery-wide usage counts, not an aggregate display
 - [x] Diagnose global Mebooru footer `monloader auth rejected`: reverse-link `api_url` incorrectly targeted Mebooru on 8455; the existing bearer token returned HTTP 200 against real Meloader on 8456
 - [x] Operator confirmed Mebooru `connected to monloader dev` after correcting `[monloader].api_url` to 8456 and restarting; existing bearer token accepted and no re-pair was necessary
+- [x] Live Derpibooru trace verified source taxonomy, mapped tags and Mebooru resolution in Audit_A
 - [ ] Live **e621** categorized metadata extraction; pinned gallery-dl 1.32.19 encountered a peer connection reset, not a source-mapping failure
 - [x] Opt-in malformed Safebooru rating test passed against local `Audit_A`: `mapping_failed`, one upload attempt for the valid control, and SHA-256 verified by read-back
 - [ ] Review e621 `lore` and `contributor` mapping **separately**; do not conflate with rating integrity
