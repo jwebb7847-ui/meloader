@@ -41,30 +41,63 @@ No service, network access, personal data, or Mebooru instance is required for t
 
 ## Controlled live-source confirmation (metadata only)
 
-With an existing gallery-dl executable available, check one public post's metadata without downloading its image:
+### macOS: locate Meloader's gallery-dl first
+
+On 2026-11-13, local Go rating/integration tests all passed on the Apple M5 worktree at `844b6b2`. The subsequent extraction attempt did **not** contact e621: `gallery-dl: command not found` means the command is absent from that shell's PATH. The JSON decoder then saw the empty redirected file. Neither outcome indicates a rating or extractor regression.
+
+Meloader can use its own managed gallery-dl, invisible to the shell's PATH. For the previously used non-desktop Audit configuration, the managed executable is generally in `~/Library/Application Support/Monloader Audit/gallery-dl/venv/bin/gallery-dl` (macOS venv); check the standalone and PATH alternatives too.
+
+Run this whole block from the Meloader validation terminal; it leaves source and audit data untouched, checks executable availability **before** accessing the network, and doesn't parse JSON after a failed extraction:
 
 ```sh
-gallery-dl --version
-OUT="${TMPDIR:-/tmp}/e621-rating-check.json"
-gallery-dl --dump-json 'https://e621.net/posts/535' > "$OUT"
-python3 - "$OUT" <<'PY'
+AUDIT="$HOME/Library/Application Support/Monloader Audit"
+GDL=""
+for candidate in \
+  "$AUDIT/gallery-dl/venv/bin/gallery-dl" \
+  "$AUDIT/gallery-dl/gallery-dl" \
+  "$AUDIT/gallery-dl"; do
+  if [ -f "$candidate" ] && [ -x "$candidate" ]; then
+    GDL="$candidate"
+    break
+  fi
+done
+if [ -z "$GDL" ]; then
+  GDL="$(command -v gallery-dl 2>/dev/null || true)"
+fi
+
+if [ -z "$GDL" ]; then
+  echo "No gallery-dl executable found in the audit folder or on PATH."
+  echo "Stop here and report this message; do not parse an empty JSON file."
+else
+  echo "Using: $GDL"
+  "$GDL" --version
+  OUT="${TMPDIR:-/tmp}/e621-rating-check.json"
+  if "$GDL" --dump-json 'https://e621.net/posts/535' > "$OUT"; then
+    python3 - "$OUT" <<'PY'
 import json
 import sys
 from pathlib import Path
-records = json.loads(Path(sys.argv[1]).read_text())
-posts = [x[-1] for x in records if isinstance(x, list) and x
-         and isinstance(x[-1], dict) and x[-1].get("category") == "e621"]
+
+messages = json.loads(Path(sys.argv[1]).read_text())
+posts = [m[-1] for m in messages
+         if isinstance(m, list) and m
+         and isinstance(m[-1], dict)
+         and m[-1].get("category") == "e621"]
 if not posts:
-    raise SystemExit("No e621 metadata returned: check site access, authorization and extractor output")
+    raise SystemExit("No e621 post metadata: check the extractor and site response.")
 post = posts[0]
 print("source:", post.get("category"))
 print("post id:", post.get("id"))
 print("rating:", post.get("rating"))
 print("categorized fields:", sorted(k for k in post if k.startswith("tags_")))
 PY
+  else
+    echo "gallery-dl could not retrieve e621 metadata; no JSON parsing attempted."
+  fi
+fi
 ```
 
-This requests post metadata over the internet and may be refused by e621; it does **not** fetch image bytes or import them into Mebooru. Share only the printed summary; the raw JSON file is not needed. The public example may become unavailable or be blocked.
+This requests post **metadata over the internet**, not the image media, and does not import into Mebooru. A site refusal or removed example post is a separate access/extractor issue. If no executable is found, verify the audit configuration's `gallerydl.binary_path` *locally* (do not share the whole TOML file, as it may hold secrets) or install the pinned gallery-dl into a separate temporary Python virtual environment for the test. **Do not change the application's configuration or add a global installer just to satisfy this check.**
 
 ## Running the application from the checked-out source
 
