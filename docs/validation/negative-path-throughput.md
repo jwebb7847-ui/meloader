@@ -324,4 +324,5 @@ After restart, tracing Derpibooru post `3796956` previewed **19 tags**, showed `
 - [x] Post-merge image metadata spot checks and taxonomy-cache reuse passed on the merged build
 - [x] Live e621 trace and import passed for post `535` in `Audit_A`. See the [live e621 result](e621.md#live-e621-import--2026-11-13).
 - [ ] Danbooru live validation remains deferred after the transport reset
-- [ ] Source taxonomy semantic decisions beyond the approved rating-integrity distinction (discuss before changes)
+- [x] e621 `lore → meta` and `contributor → artist` filing policy approved after [live traces](e621.md#live-lore-and-contributor-traces--2026-11-13)
+- [ ] Review additional source taxonomy decisions before changing their behavior

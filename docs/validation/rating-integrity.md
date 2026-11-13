@@ -222,7 +222,7 @@ Stop it with Ctrl+C. Do not use an older compiled binary or kill an unknown proc
 - [x] Live Derpibooru trace verified source taxonomy, mapped tags and Mebooru resolution in Audit_A
 - [x] Live e621 categorized extraction, rating mapping and import passed for post `535` in `Audit_A`. See the [live e621 result](e621.md#live-e621-import--2026-11-13).
 - [x] Opt-in malformed Safebooru rating test passed against local `Audit_A`: `mapping_failed`, one upload attempt for the valid control, and SHA-256 verified by read-back
-- [ ] Review e621 `lore` and `contributor` mapping **separately**; do not conflate with rating integrity
+- [x] e621 category policy approved after [live traces](e621.md#live-lore-and-contributor-traces--2026-11-13): retain `lore → meta` and `contributor → artist`
 - [x] Bounded Safebooru end-to-end acquisition: five new images in ~12 s and 20 new images in ~35 s; see the [staged workload results](negative-path-throughput.md#bounded-20-post-safebooru-run-and-continuation--passed)
 - [x] [Bounded Derpibooru taxonomy cache audit](negative-path-throughput.md#macbook-air-live-result--passed-2026-11-13): all three warm cache reloads reproduced the cold pass's mapped tags with zero taxonomy HTTP attempts
 - [ ] Compare larger end-to-end workloads that exercise source taxonomy cache behavior
