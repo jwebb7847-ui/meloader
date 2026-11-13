@@ -1,0 +1,93 @@
+# Meloader / Mebooru project roadmap
+
+> Working architecture and development plan, maintained for this fork.
+> Last reviewed: 2026-11-13. This document is a plan, **not** a declaration that pending implementation is already tested or merged.
+
+## North star
+
+Meloader retrieves images **with the correct meaning of their source metadata**, using gallery-dl for broad source compatibility and small optional source-specific adapters when more precision is required. Mebooru maintains a coherent local library with trustworthy source provenance, browsing, search, tags, and relationships.
+
+Keep the network boundary intact: Meloader is the explicitly WAN-capable acquisition companion; the Mebooru library core does not gain new outbound dependencies. They can eventually feel like one application through an integrated acquisition interface while remaining separate services at first.
+
+**Important distinction:** Recovering *source taxonomy* (e.g. whether a tag is a character) is not the same as reconciling *cross-source vocabulary* (e.g. synonyms such as `flight` and `flying`). The latter is a separate library-level problem. Do not silently conflate the two.
+
+## Architecture invariants
+
+1. One generic gallery-dl / queue / download / upload pipeline. Do not reimplement it separately in each adapter.
+2. Source profiles remain the broad compatibility fallback. An unrecognized source works exactly as before when it has no adapter.
+3. Adapters explain source semantics; generic rules, blacklist policy, destination selection, file handling, deduplication, and Mebooru communication stay outside adapters.
+4. A source with trustworthy, fully categorized metadata must not incur network enrichment merely because an adapter is registered.
+5. Preserve original source identity, attribution, and Mebooru tag/source provenance. Do not turn known-invalid metadata into silently accepted general tags.
+6. Keep user overrides meaningful; discuss precedence and error/fallback behavior before changing their semantics.
+7. Prefer bounded concurrency, batched requests, shared persistent caching, and explicit failure paths to unbounded per-post work.
+8. Discuss changes to behavior, trust, privacy, or user-facing concepts before implementation. Reliability, testing, and nonbehavioral internal refactors may proceed independently.
+9. Require tests and meaningful bulk-workload measurements before claiming a generalized implementation preserves speed.
+
+## Current work and branches
+
+- `main`: tracks upstream-derived Meloader; **not** yet the home of the source-taxonomy feature work.
+- `mebooru-derpi-taxonomy`: earlier Derpibooru taxonomy implementation.
+- `meloader-taxonomy-speed`: hardened Derpibooru enrichment, caching and performance work.
+- `meloader-source-adapter-registry`: source-keyed taxonomy dispatch and registry tests; intended baseline for item 3.
+- `meloader-item3-optional-capabilities`: item 3A changes in [draft PR #1](https://github.com/jwebb7847-ui/meloader/pull/1). These changes are **not merged**. Automated tests still need a confirmed passing result.
+
+The initial taxonomy registry intentionally lives in `internal/taxonomy`. Do not move the namespace prematurely; it should only be promoted when the final source-semantics contract warrants it.
+
+## Milestones
+
+### 1. Derpibooru taxonomy foundation — implemented on feature branches
+
+Recover authoritative category information when gallery-dl emits flattened tags. Maintain a persistent cache, handle network/metadata failures, support lookups/warming, and preserve the generic mapper. The long-tail taxonomy-semantic audit is deliberately deferred.
+
+### 2. Validate source taxonomy and optimization — largely implemented on feature branches
+
+Cache persistence, batch lookup, in-flight deduplication, retry/error handling, and focused tests were developed. Revalidate before merging to `main`.
+
+### 3. Generalized source adapters — **current priority**
+
+- [x] Initial source registry and dispatch in `meloader-source-adapter-registry`.
+- [x] Draft optional enrichment/warming interfaces and tests in PR #1 (not merged; CI result pending).
+- [ ] Establish a working automated Go test and race-check gate, then verify item 3A.
+- [ ] Define the semantic contract: source ownership, field-level authority, absent vs invalid, fallback, error propagation, policy precedence.
+- [ ] Extend only source-specific capabilities actually needed: taxonomy, rating interpretation, canonical identity/URL, integrity validation, optional enrichment and declared capabilities.
+- [ ] Preserve profile/user mapping behavior and the existing Mebooru metadata contract.
+- [ ] Test with a second source whose metadata model differs materially from Derpibooru.
+- [ ] Measure cold/warm 200-, 1,000-, and 10,000-image workflows, including time to first import, throughput, extra HTTP requests, peak RAM/goroutines and failure rates.
+- [ ] Review potential bulk-path hotspots: concurrent cache warmers, cross-post request batching, repetitive cache snapshots, and sequential post-import blocking. **Optimize from measurements, not assumptions.**
+- [ ] Merge only after tests, performance acceptance, and any relevant conceptual approvals.
+
+### 4. Further booru coverage
+
+Add narrowly scoped adapters for sources that require specialized semantics. Preserve generic support for other gallery-dl sources. Revisit unproven Derpibooru taxonomy edge cases.
+
+### 5. Meloader / Mebooru user integration
+
+Make source acquisition feel native within Mebooru, potentially as a top-level tab, while initially keeping Meloader a separate explicitly WAN-capable service and retaining Mebooru's library privacy boundary.
+
+### 6. Reliability and observability
+
+Improve acquisition diagnostics, retry visibility, structured timing, failure distinctions and regression monitoring without sacrificing snappiness.
+
+### 7. Broader Mebooru library experience
+
+Develop browsing, review, organization, relationships and cross-source vocabulary consistency as distinct capabilities beyond source-taxonomy interpretation.
+
+### 8. Naming and packaging cleanup — deferred
+
+Complete invasive Monloader/Monbooru naming migration only when architecture and compatibility are stable.
+
+## Merge/acceptance gates
+
+- Run `go test -race ./...` and `go vet ./...` on supported Go version. Live integration tests are separately opt-in.
+- Verify unknown-source fallback, source provenance, ratings, user overrides, blacklist behavior and consistent errors.
+- Ensure source metadata is never silently flattened or reclassified due to failure of a specialized adapter.
+- Compare the existing source-adapter baseline and the candidate under representative warm-cache workloads; reject a meaningful user-perceived speed regression.
+- For cold-cache workloads, measure requests, waiting, error handling, throughput and memory before making promises.
+- Keep the proposed behavior-changing semantics in review until discussed with the product owner.
+
+## Known open decisions
+
+- How to represent an adapter's answer at the field level (resolved / absent / invalid) and distinguish authoritative uncertainty from a broken payload.
+- Exactly how authoritative source interpretations, profile fallbacks, user overrides and generic rules compose without changing existing trust or preferences.
+- Where to draw the contract boundary between `internal/taxonomy` and a future more general source-adapter package.
+- Which distinct second booru best stress-tests the adapter contract.
