@@ -62,6 +62,164 @@ Record the commit, CPU, `ns/op`, custom `posts/s`, `B/op`, and `allocs/op` per b
 
 The earlier e621 `BenchmarkE621CategorizedLocalProcessing` measured mapper CPU only, and its timings are **not directly comparable** to this HTTP-inclusive benchmark.
 
+### Recorded Apple M5 benchmark — 2026-11-13
+
+Operator ran the **separate disposable QA worktree** at Meloader commit `41c954b` (macOS `darwin/arm64`, Apple M5). Focused `go test -race ./internal/mapping ./internal/pipeline -run 'TestRatingIntegrity|TestRatingErr|TestValidateSourceRating|TestTraceReportsRatingIntegrityRefusal' -count=1` passed for **both packages** (1.533 s, 1.564 s). The three single-iteration benchmark runs per batch size also passed, as did the Go CI suite for the benchmark implementation.
+
+Command:
+
+```sh
+go test ./internal/pipeline -run '^
+
+Rather than repeatedly retrying e621 after its connection reset, use the upstream gallery-dl v1.32.19 fixture `https://danbooru.donmai.us/posts/294929`. Its pinned fixture declares `rating: "s"`, which means **sensitive** in the Danbooru family, not e621's **safe**. Its source tags include artist, character, copyright, meta and general fields. This makes it a stronger cross-family rating/tag test than another Derpibooru post.
+
+**Metadata-only preflight** (one post, no media download):
+
+```sh
+GDL="$HOME/Library/Application Support/Meloader Validation/gallery-dl-1.32.19/bin/gallery-dl"
+OUT="${TMPDIR:-/tmp}/danbooru-rating-check.json"
+
+"$GDL" --config-ignore --dump-json \
+  'https://danbooru.donmai.us/posts/294929' > "$OUT"
+
+python3 - "$OUT" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+messages = json.loads(Path(sys.argv[1]).read_text())
+if not isinstance(messages, list):
+    raise SystemExit("Unexpected extractor message format.")
+errors = [m[-1] for m in messages
+          if isinstance(m, list) and m and m[0] == -1 and isinstance(m[-1], dict)]
+if errors:
+    print("Extractor error class:", errors[0].get("error", "unknown"))
+    raise SystemExit("Source metadata unavailable; stop without importing.")
+posts = [m[-1] for m in messages
+         if isinstance(m, list) and m and isinstance(m[-1], dict)
+         and m[-1].get("category") == "danbooru"]
+if not posts:
+    raise SystemExit("No Danbooru post metadata; stop without importing.")
+post = posts[0]
+print("Source:", post.get("category"))
+print("Post ID:", post.get("id"))
+print("Native rating:", post.get("rating"))
+print("Categorized fields:", sorted(k for k in post if k.startswith("tag_string_")))
+if post.get("id") != 294929 or post.get("rating") != "s":
+    raise SystemExit("Source changed since pinned fixture; inspect before importing.")
+print("Metadata preflight: PASS (expected mapped rating: sensitive)")
+PY
+```
+
+The post and rating may change over time. **Never** import it merely because the extractor process exited with code zero: `--dump-json` can embed error messages. Do not share raw metadata URLs or API credentials. If access fails, stop after one attempt. A fallback candidate is the Gelbooru-family `safebooru.org` source; start with one metadata-only post and verify rating/category fields before attempting an import.
+
+**Routing guard:** before any Danbooru import, check that Meloader's `[monbooru].default_gallery` plus any `[[sites]]` override for `danbooru` resolves to **Audit_A**, not `home` or `Audit_B`. The existing successful Derpibooru override check does *not* prove Danbooru's routing.
+
+Once metadata and routing both pass, import **only this one post** through Meloader using `up to 1`. Confirm `1 created` or a clearly distinguished duplicate; inspect the individual Mebooru image detail for `rating:sensitive`, categorized tags and source provenance. Do not turn a failed source into a generic/unrated import.
+
+## 4. Staged live workload, not a bulk leap
+
+After the one-post cross-family import works:
+- Run a source-filtered **5-post** audit job (never `all`) and inspect created/skipped/failed counts, the correct gallery, source attribution and per-item rating.
+- If it completes cleanly, run a **20-post** audit job to measure end-to-end wall time, bytes downloaded, rate/requests where available, and Mebooru item persistence.
+- Stop at unexpected authorization errors, sustained rate limiting, repeated 5xx, bad/missing source ratings or an unexpected gallery destination. Never defeat access controls or increase concurrency just to complete the test.
+
+For every run, record the source URL/query, gallery, two running server commit SHAs, gallery-dl version, job window, start/end time, successes/skips/failures and first failure reason. **Do not conflate** these real-run results with the mock HTTP benchmark.
+
+## Remaining acceptance gates
+
+- [x] Positive Derpibooru source -> Mebooru Audit_A -> per-image metadata, tags and original source persisted
+- [x] Reverse Mebooru -> Meloader authenticated health restored with existing bearer token
+- [x] Expanded mixed-batch rejection and normal source-rating cases passed Go race+vet CI (run 43356175480)
+- [ ] Repeat expanded negative-path tests locally on Apple Silicon
+- [x] Execute local Apple M5 loopback HTTP benchmark: median 20=2,118 posts/s, 200=6,130 posts/s, 1,000=5,840 posts/s; near-linear 200->1,000 scale, synthetic 16 KiB files and mock Mebooru only
+- [ ] One live Danbooru (or another distinct-rated-family) post accepted with correct native/mapped rating
+- [ ] Bounded 5-post and 20-post live workloads accepted and measured
+- [ ] Live e621 categorized extractor confirmation (deferred for transport reset; do not block all other testing)
+- [ ] Source taxonomy semantic decisions beyond the approved rating-integrity distinction (discuss before changes)
+ \
+  -bench '^BenchmarkRatingIntegrityHTTPUploadBatch
+
+Rather than repeatedly retrying e621 after its connection reset, use the upstream gallery-dl v1.32.19 fixture `https://danbooru.donmai.us/posts/294929`. Its pinned fixture declares `rating: "s"`, which means **sensitive** in the Danbooru family, not e621's **safe**. Its source tags include artist, character, copyright, meta and general fields. This makes it a stronger cross-family rating/tag test than another Derpibooru post.
+
+**Metadata-only preflight** (one post, no media download):
+
+```sh
+GDL="$HOME/Library/Application Support/Meloader Validation/gallery-dl-1.32.19/bin/gallery-dl"
+OUT="${TMPDIR:-/tmp}/danbooru-rating-check.json"
+
+"$GDL" --config-ignore --dump-json \
+  'https://danbooru.donmai.us/posts/294929' > "$OUT"
+
+python3 - "$OUT" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+messages = json.loads(Path(sys.argv[1]).read_text())
+if not isinstance(messages, list):
+    raise SystemExit("Unexpected extractor message format.")
+errors = [m[-1] for m in messages
+          if isinstance(m, list) and m and m[0] == -1 and isinstance(m[-1], dict)]
+if errors:
+    print("Extractor error class:", errors[0].get("error", "unknown"))
+    raise SystemExit("Source metadata unavailable; stop without importing.")
+posts = [m[-1] for m in messages
+         if isinstance(m, list) and m and isinstance(m[-1], dict)
+         and m[-1].get("category") == "danbooru"]
+if not posts:
+    raise SystemExit("No Danbooru post metadata; stop without importing.")
+post = posts[0]
+print("Source:", post.get("category"))
+print("Post ID:", post.get("id"))
+print("Native rating:", post.get("rating"))
+print("Categorized fields:", sorted(k for k in post if k.startswith("tag_string_")))
+if post.get("id") != 294929 or post.get("rating") != "s":
+    raise SystemExit("Source changed since pinned fixture; inspect before importing.")
+print("Metadata preflight: PASS (expected mapped rating: sensitive)")
+PY
+```
+
+The post and rating may change over time. **Never** import it merely because the extractor process exited with code zero: `--dump-json` can embed error messages. Do not share raw metadata URLs or API credentials. If access fails, stop after one attempt. A fallback candidate is the Gelbooru-family `safebooru.org` source; start with one metadata-only post and verify rating/category fields before attempting an import.
+
+**Routing guard:** before any Danbooru import, check that Meloader's `[monbooru].default_gallery` plus any `[[sites]]` override for `danbooru` resolves to **Audit_A**, not `home` or `Audit_B`. The existing successful Derpibooru override check does *not* prove Danbooru's routing.
+
+Once metadata and routing both pass, import **only this one post** through Meloader using `up to 1`. Confirm `1 created` or a clearly distinguished duplicate; inspect the individual Mebooru image detail for `rating:sensitive`, categorized tags and source provenance. Do not turn a failed source into a generic/unrated import.
+
+## 4. Staged live workload, not a bulk leap
+
+After the one-post cross-family import works:
+- Run a source-filtered **5-post** audit job (never `all`) and inspect created/skipped/failed counts, the correct gallery, source attribution and per-item rating.
+- If it completes cleanly, run a **20-post** audit job to measure end-to-end wall time, bytes downloaded, rate/requests where available, and Mebooru item persistence.
+- Stop at unexpected authorization errors, sustained rate limiting, repeated 5xx, bad/missing source ratings or an unexpected gallery destination. Never defeat access controls or increase concurrency just to complete the test.
+
+For every run, record the source URL/query, gallery, two running server commit SHAs, gallery-dl version, job window, start/end time, successes/skips/failures and first failure reason. **Do not conflate** these real-run results with the mock HTTP benchmark.
+
+## Remaining acceptance gates
+
+- [x] Positive Derpibooru source -> Mebooru Audit_A -> per-image metadata, tags and original source persisted
+- [x] Reverse Mebooru -> Meloader authenticated health restored with existing bearer token
+- [x] Expanded mixed-batch rejection and normal source-rating cases passed Go race+vet CI (run 43356175480)
+- [ ] Repeat expanded negative-path tests locally on Apple Silicon
+- [ ] Execute the new local loopback HTTP batch benchmark on Apple Silicon and record metrics
+- [ ] One live Danbooru (or another distinct-rated-family) post accepted with correct native/mapped rating
+- [ ] Bounded 5-post and 20-post live workloads accepted and measured
+- [ ] Live e621 categorized extractor confirmation (deferred for transport reset; do not block all other testing)
+- [ ] Source taxonomy semantic decisions beyond the approved rating-integrity distinction (discuss before changes)
+ \
+  -benchtime=1x -count=3 -benchmem
+```
+
+| Batch size | Raw elapsed times (ms) | Median elapsed (ms) | Median throughput (posts/s) | Median B/op | Median allocs/op |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| 20 | 9.936, 9.441, 9.395 | **9.441** | **2,118** | 3,032,640 | 7,746 |
+| 200 | 40.707, 32.625, 31.911 | **32.625** | **6,130** | 30,313,136 | 76,226 |
+| 1,000 | 172.142, 170.287, 171.237 | **171.237** | **5,840** | 162,436,224 | 386,154 |
+
+B/op is **total allocated bytes during a complete synthetic batch**, not resident or peak memory. The 200->1,000 scale-up increased wall time approximately 5.25x for 5x records, consistent with nearly linear scaling over the tested range, not evidence of production performance. The 20-post outlier reflects more fixed overhead/noise relative to its short duration. At 1,000 posts, the benchmark allocated ~162 KB and ~386 Go objects per synthetic post. These measurements do not include actual booru networking, real media sizes, Mebooru SQLite/indexing, or other production ingestion.
+
+**Assessment:** No convincing scaling bottleneck within this tested local mapping -> HTTP boundary. Do not optimize the pipeline from these synthetic numbers alone. Next valid performance evidence is a guarded second-source **one-post** acceptance, followed by carefully bounded five- and twenty-post workloads only after the source and destination checks pass.
+
 ## 3. Alternate live booru: Danbooru (if accessible)
 
 Rather than repeatedly retrying e621 after its connection reset, use the upstream gallery-dl v1.32.19 fixture `https://danbooru.donmai.us/posts/294929`. Its pinned fixture declares `rating: "s"`, which means **sensitive** in the Danbooru family, not e621's **safe**. Its source tags include artist, character, copyright, meta and general fields. This makes it a stronger cross-family rating/tag test than another Derpibooru post.
