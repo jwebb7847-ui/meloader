@@ -29,7 +29,7 @@ Keep the network boundary intact: Meloader is the explicitly WAN-capable acquisi
 - `mebooru-derpi-taxonomy`: earlier Derpibooru taxonomy implementation.
 - `meloader-taxonomy-speed`: hardened Derpibooru enrichment, caching and performance work.
 - `meloader-source-adapter-registry`: source-keyed taxonomy dispatch and registry tests; intended baseline for item 3.
-- `meloader-item3-optional-capabilities`: item 3A changes in [draft PR #1](https://github.com/jwebb7847-ui/meloader/pull/1). These changes are **not merged**. Automated tests still need a confirmed passing result.
+- `meloader-item3-optional-capabilities`: item 3A changes in [draft PR #1](https://github.com/jwebb7847-ui/meloader/pull/1). These changes are **not merged**. The initial Go race-test and vet workflow passed on 2026-11-13; integration and performance acceptance remain outstanding.
 
 The initial taxonomy registry intentionally lives in `internal/taxonomy`. Do not move the namespace prematurely; it should only be promoted when the final source-semantics contract warrants it.
 
@@ -47,7 +47,7 @@ Cache persistence, batch lookup, in-flight deduplication, retry/error handling, 
 
 - [x] Initial source registry and dispatch in `meloader-source-adapter-registry`.
 - [x] Draft optional enrichment/warming interfaces and tests in PR #1 (not merged; CI result pending).
-- [ ] Establish a working automated Go test and race-check gate, then verify item 3A.
+- [x] Establish a working automated Go test and race-check gate and verify item 3A ([passing run](https://github.com/jwebb7847-ui/meloader/actions/runs/43335802201)); later implementation commits still require their own checks.
 - [ ] Define the semantic contract: source ownership, field-level authority, absent vs invalid, fallback, error propagation, policy precedence.
 - [ ] Extend only source-specific capabilities actually needed: taxonomy, rating interpretation, canonical identity/URL, integrity validation, optional enrichment and declared capabilities.
 - [ ] Preserve profile/user mapping behavior and the existing Mebooru metadata contract.
