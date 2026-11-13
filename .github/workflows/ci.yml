@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: go-validation-${{ github.workflow }}-${{ github.ref }}
+  group: go-validation-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
