@@ -141,7 +141,7 @@ if not errors:
     raise SystemExit("No embedded gallery-dl extractor error found")
 for error in errors:
     message = str(error.get("message", ""))
-    message = re.sub(r"https?://[^\\s\"'<>]+", "[URL REDACTED]", message)
+    message = re.sub(r"https?://\S+", "[URL REDACTED]", message)
     print("Error class:", error.get("error", "unknown"))
     print("Redacted detail:", message[:350] or "(empty)")
 PY
