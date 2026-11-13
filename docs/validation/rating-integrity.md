@@ -74,17 +74,35 @@ else
   OUT="${TMPDIR:-/tmp}/e621-rating-check.json"
   if "$GDL" --dump-json 'https://e621.net/posts/535' > "$OUT"; then
     python3 - "$OUT" <<'PY'
+import collections
 import json
+import re
 import sys
 from pathlib import Path
 
 messages = json.loads(Path(sys.argv[1]).read_text())
+if not isinstance(messages, list):
+    raise SystemExit("Unexpected JSON shape: expected a list of gallery-dl messages.")
+
+codes = collections.Counter(str(m[0]) for m in messages if isinstance(m, list) and m)
+print("message types:", dict(codes))
+for msg in messages:
+    if not isinstance(msg, list) or not msg or not isinstance(msg[-1], dict):
+        continue
+    if msg[0] == -1:  # gallery-dl DataJob embeds extractor failures in JSON
+        error = msg[-1]
+        detail = str(error.get("message", ""))
+        http_status = re.search(r"(?<![0-9])([45][0-9]{2})(?![0-9])", detail)
+        print("extractor error class:", error.get("error", "unknown"))
+        print("HTTP status:", http_status.group(1) if http_status else "not available")
+        # Intentionally do not print the full error message or embedded URLs.
+
 posts = [m[-1] for m in messages
          if isinstance(m, list) and m
          and isinstance(m[-1], dict)
          and m[-1].get("category") == "e621"]
 if not posts:
-    raise SystemExit("No e621 post metadata: check the extractor and site response.")
+    raise SystemExit("No e621 post metadata; inspect the message types and error class above.")
 post = posts[0]
 print("source:", post.get("category"))
 print("post id:", post.get("id"))
@@ -96,6 +114,8 @@ PY
   fi
 fi
 ```
+
+**Important:** gallery-dl `--dump-json` can return a JSON list containing an error message (`-1`) and an exit code of zero, because the `DataJob` captures the extractor exception. A successful shell exit alone is **not** proof of successful metadata extraction. The parser above prints diagnostic **types/statuses only**, not raw error strings or URLs. On 2026-11-13, a pinned 1.32.19 macOS validation command returned `No e621 metadata returned`; extraction remains **unverified** until the embedded message is inspected.
 
 This requests post **metadata over the internet**, not the image media, and does not import into Mebooru. A site refusal or removed example post is a separate access/extractor issue. If no executable is found, verify the audit configuration's `gallerydl.binary_path` *locally* (do not share the whole TOML file, as it may hold secrets) or install the pinned gallery-dl into a separate temporary Python virtual environment for the test. **Do not change the application's configuration or add a global installer just to satisfy this check.**
 
