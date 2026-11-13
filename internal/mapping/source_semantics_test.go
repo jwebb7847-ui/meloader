@@ -1,6 +1,7 @@
 package mapping
 
 import (
+	"encoding/json"
 	"reflect"
 	"slices"
 	"testing"
@@ -70,5 +71,49 @@ func TestCategorizedSourcesRequireUsableCategoryEvidenceForFlatTags(t *testing.T
 				t.Errorf("flat tag refusal = %t, want %t", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestDerpibooruPostIdentityUsesNativeID(t *testing.T) {
+	mapper := newE621Mapper(t, config.Default())
+	for _, tc := range []struct {
+		id   any
+		want string
+	}{
+		{json.Number("9007199254740993"), "9007199254740993"},
+		{"0042", "42"},
+		{nil, ""},
+		{json.Number("0"), ""},
+		{json.Number("-1"), ""},
+		{json.Number("1.5"), ""},
+		{"wrong", ""},
+	} {
+		meta := map[string]any{"category": CategoryDerpibooru, "id": tc.id,
+			"gallery_id": "7", "permalink": "https://derpibooru.org/search?q=safe"}
+		if got := PostID(meta); got != tc.want {
+			t.Errorf("PostID(%v) = %q, want %q", tc.id, got, tc.want)
+		}
+		wantURL := ""
+		if tc.want != "" {
+			wantURL = "https://derpibooru.org/images/" + tc.want
+		}
+		if got := mapper.PostURL(meta); got != wantURL {
+			t.Errorf("PostURL(%v) = %q, want %q", tc.id, got, wantURL)
+		}
+	}
+}
+
+func TestDerpibooruCanonicalPostURLRequiresPostPath(t *testing.T) {
+	mapper := newE621Mapper(t, config.Default())
+	for _, path := range []string{"/search?q=safe&id=42", "/galleries/42?id=42", "/images/0", "/images/42/extra"} {
+		if _, url, ok := mapper.CanonicalPostURL("https://derpibooru.org" + path); ok {
+			t.Errorf("%q was treated as canonical post %q", path, url)
+		}
+	}
+	for _, path := range []string{"/images/42?id=99", "/42"} {
+		site, url, ok := mapper.CanonicalPostURL("https://www.derpibooru.org" + path)
+		if !ok || site != CategoryDerpibooru || url != "https://derpibooru.org/images/42" {
+			t.Errorf("%q resolved to (%q, %q, %t)", path, site, url, ok)
+		}
 	}
 }

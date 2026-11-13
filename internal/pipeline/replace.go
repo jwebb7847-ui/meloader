@@ -15,6 +15,7 @@ import (
 
 	"github.com/monbooru/monloader/internal/gdl"
 	"github.com/monbooru/monloader/internal/kwdict"
+	"github.com/monbooru/monloader/internal/mapping"
 	"github.com/monbooru/monloader/internal/monbooru"
 	"github.com/monbooru/monloader/internal/outcome"
 	"github.com/monbooru/monloader/internal/queue"
@@ -42,7 +43,12 @@ func (p *Processor) processReplace(ctx context.Context, job, snap *queue.Job) er
 			Code: outcome.ErrCodeUnsupportedURL, Msg: "the url names more than one post"})
 		return nil
 	}
-	job.SetSite(res.Items[0].Category)
+	listed := res.Items[0]
+	job.SetSite(listed.Category)
+	if err := sourceIdentityErr(listed.Meta); err != nil {
+		p.failEnrichFetch(ctx, job, snap, err)
+		return nil
+	}
 
 	workDir := filepath.Join(p.workRoot, fmt.Sprintf("job-%d", snap.ID))
 	if mkErr := os.MkdirAll(workDir, 0o755); mkErr != nil {
@@ -65,7 +71,15 @@ func (p *Processor) processReplace(ctx context.Context, job, snap *queue.Job) er
 		return nil
 	}
 	w := &downloaded[i]
-	if err := p.enrichTaxonomy(ctx, w.Meta); err != nil {
+	if listed.Category == mapping.CategoryDerpibooru &&
+		(kwdict.String(w.Meta, "category") != listed.Category || mapping.PostID(w.Meta) != mapping.PostID(listed.Meta)) {
+		p.failEnrichFetch(ctx, job, snap, &sourceMetadataError{&outcome.CodedError{
+			Code: outcome.ErrCodeMappingFailed,
+			Msg:  "source identity: the downloaded Derpibooru post does not match the resolved post",
+		}})
+		return nil
+	}
+	if err := p.prepareSourceMetadata(ctx, w.Meta); err != nil {
 		p.failEnrichFetch(ctx, job, snap, err)
 		return nil
 	}

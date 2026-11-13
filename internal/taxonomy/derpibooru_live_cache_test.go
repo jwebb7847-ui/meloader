@@ -52,7 +52,10 @@ func TestDerpibooruLiveTaxonomyColdWarm(t *testing.T) {
 	ids := make([]string, 0, postCount)
 	sourceTags := make(map[string]struct{})
 	for _, item := range res.Items {
-		tags := tagStrings(item.Meta["tags"])
+		tags, err := tagStrings(item.Meta["tags"])
+		if err != nil {
+			t.Fatalf("post %q: %v", item.ID, err)
+		}
 		if item.Category != "derpibooru" || item.ID == "" || slices.Contains(ids, item.ID) ||
 			!slices.Contains(tags, "safe") || !slices.Contains(tags, "rainbow dash") {
 			t.Fatalf("unexpected listing record at position %d (post %q)", len(ids)+1, item.ID)

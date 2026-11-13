@@ -43,7 +43,7 @@ type Derpibooru struct {
 	mu              sync.Mutex
 	saveMu          sync.Mutex
 	cache           map[string]tagRecord
-	inflight        map[string]*tagCall
+	inflight        map[tagLookup]*tagCall
 	slots           chan struct{}
 	generation      uint64
 	savedGeneration uint64
@@ -53,12 +53,70 @@ type Derpibooru struct {
 }
 
 type tagRecord struct {
-	ID              int64  `json:"id"`
-	Name            string `json:"name"`
-	Slug            string `json:"slug,omitempty"`
-	Category        string `json:"category,omitempty"`
-	Namespace       string `json:"namespace,omitempty"`
-	NameInNamespace string `json:"name_in_namespace,omitempty"`
+	ID              int64       `json:"id"`
+	Name            string      `json:"name"`
+	Slug            string      `json:"slug,omitempty"`
+	Category        tagCategory `json:"category,omitzero"`
+	Namespace       string      `json:"namespace,omitempty"`
+	NameInNamespace string      `json:"name_in_namespace,omitempty"`
+}
+
+// Philomena sends null for a tag with no category. Older caches omitted
+// that field, so an omitted category needs fresh source evidence.
+type tagCategory struct {
+	value         string
+	uncategorized bool
+}
+
+func (c *tagCategory) UnmarshalJSON(raw []byte) error {
+	var value *string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return err
+	}
+	if value == nil {
+		*c = tagCategory{uncategorized: true}
+	} else {
+		*c = tagCategory{value: *value}
+	}
+	return nil
+}
+
+func (c tagCategory) MarshalJSON() ([]byte, error) {
+	if c.uncategorized {
+		return []byte("null"), nil
+	}
+	return json.Marshal(c.value)
+}
+
+func (r tagRecord) validate() error {
+	if r.ID <= 0 || normalizeKey(r.Name) == "" {
+		return fmt.Errorf("invalid Derpibooru tag identity (id %d, name %q)", r.ID, r.Name)
+	}
+	if r.Category.uncategorized {
+		return nil
+	}
+	switch r.Category.value {
+	case "character", "species", "body-type", "oc", "origin",
+		"content-official", "content-fanmade", "error", "spoiler", "rating":
+		return nil
+	case "":
+		return fmt.Errorf("Derpibooru tag %q has a missing or empty category", r.Name)
+	default:
+		return fmt.Errorf("Derpibooru tag %q has an unknown category %q", r.Name, r.Category.value)
+	}
+}
+
+// id is empty when gallery-dl did not supply a usable tag ID.
+type tagLookup struct {
+	name string
+	id   string
+}
+
+func (t tagLookup) checkID(rec tagRecord) error {
+	if t.id != "" && t.id != strconv.FormatInt(rec.ID, 10) {
+		return fmt.Errorf("Derpibooru tag %q: expected id %s, got %d", t.name, t.id, rec.ID)
+	}
+	return nil
 }
 
 type tagSearchResponse struct {
@@ -80,7 +138,7 @@ func newDerpibooru(
 ) (*Derpibooru, error) {
 	d := &Derpibooru{
 		cache:     map[string]tagRecord{},
-		inflight:  map[string]*tagCall{},
+		inflight:  map[tagLookup]*tagCall{},
 		slots:     make(chan struct{}, derpibooruMaxConcurrent),
 		cachePath: cachePath,
 		baseURL:   strings.TrimRight(baseURL, "/"),
@@ -123,9 +181,13 @@ func loadDerpibooruCache(
 
 	if err := json.Unmarshal(raw, &cache); err == nil {
 		if cache == nil {
-			cache = map[string]tagRecord{}
+			return map[string]tagRecord{}, nil
 		}
-
+		for key, rec := range cache {
+			if rec.validate() != nil || key != normalizeKey(rec.Name) {
+				delete(cache, key)
+			}
+		}
 		return cache, nil
 	} else {
 		quarantined, qerr := quarantineCorruptCache(
@@ -168,68 +230,26 @@ func quarantineCorruptCache(
 	return target, nil
 }
 
-func (d *Derpibooru) Warm(
-	ctx context.Context,
-	meta map[string]any,
-) error {
-	if strings.ToLower(strings.TrimSpace(
-		stringValue(meta["category"]),
-	)) != "derpibooru" {
+func (d *Derpibooru) Warm(ctx context.Context, meta map[string]any) error {
+	if normalizeAdapterSource(stringValue(meta["category"])) != d.Source() {
 		return nil
 	}
-
-	sourceTags := tagStrings(meta["tags"])
-	if len(sourceTags) == 0 {
-		return nil
-	}
-
-	/*
-		Philomena includes tag_ids alongside tags. Resolve all uncached
-		taxonomy records in batches first; fall back to exact-name lookup
-		only for records the batch response did not provide.
-	*/
-	if err := d.prefillByIDs(
-		ctx,
-		sourceTags,
-		meta["tag_ids"],
-	); err != nil {
-		return err
-	}
-
-	for _, sourceName := range sourceTags {
-		if _, ok := d.cached(sourceName); ok {
-			continue
-		}
-
-		if _, err := d.resolve(
-			ctx,
-			sourceName,
-		); err != nil {
-			return fmt.Errorf(
-				"warming Derpibooru tag %q: %w",
-				sourceName,
-				err,
-			)
-		}
-	}
-
-	return nil
+	_, _, err := d.resolvePostTags(ctx, meta)
+	return err
 }
 
-func (d *Derpibooru) Enrich(
-	ctx context.Context,
-	meta map[string]any,
-) error {
-	if strings.ToLower(strings.TrimSpace(stringValue(meta["category"]))) != "derpibooru" {
+func (d *Derpibooru) Enrich(ctx context.Context, meta map[string]any) error {
+	if normalizeAdapterSource(stringValue(meta["category"])) != d.Source() {
 		return nil
 	}
-
-	sourceTags := tagStrings(meta["tags"])
+	sourceTags, records, err := d.resolvePostTags(ctx, meta)
+	if err != nil {
+		return err
+	}
 	if len(sourceTags) == 0 {
 		return nil
 	}
-
-	if err := d.Warm(ctx, meta); err != nil {
+	if err := d.save(); err != nil {
 		return err
 	}
 
@@ -247,50 +267,6 @@ func (d *Derpibooru) Enrich(
 		Rating tags remain unchanged so the existing Philomena rating
 		path continues to lift them into Monbooru's rating category.
 	*/
-	records := make([]tagRecord, len(sourceTags))
-	errs := make([]error, len(sourceTags))
-
-	var wg sync.WaitGroup
-
-	for i, sourceName := range sourceTags {
-		i := i
-		sourceName := sourceName
-
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
-			records[i], errs[i] = d.resolve(
-				ctx,
-				sourceName,
-			)
-		}()
-	}
-
-	wg.Wait()
-
-	/*
-		Persist successful cache misses even if another tag in the same
-		post failed. The metadata itself is still mutated only after every
-		tag resolved successfully, preserving all-or-nothing enrichment.
-	*/
-	saveErr := d.save()
-
-	for i, err := range errs {
-		if err != nil {
-			return fmt.Errorf(
-				"resolving Derpibooru tag %q: %w",
-				sourceTags[i],
-				err,
-			)
-		}
-	}
-
-	if saveErr != nil {
-		return saveErr
-	}
-
 	rewritten := make([]string, 0, len(sourceTags))
 
 	for i, sourceName := range sourceTags {
@@ -333,7 +309,7 @@ func derpibooruTarget(
 ) (category string, name string, rating bool) {
 	sourceName = strings.TrimSpace(sourceName)
 
-	if strings.EqualFold(rec.Category, "rating") {
+	if rec.Category.value == "rating" {
 		return "", strings.ToLower(strings.TrimSpace(rec.Name)), true
 	}
 
@@ -354,7 +330,7 @@ func derpibooruTarget(
 		return "character", nameInNamespace, false
 	}
 
-	switch strings.ToLower(strings.TrimSpace(rec.Category)) {
+	switch rec.Category.value {
 	case "species":
 		return "species", sourceName, false
 
@@ -386,106 +362,133 @@ func afterNamespace(name string) string {
 	return strings.TrimSpace(rest)
 }
 
-func (d *Derpibooru) prefillByIDs(
-	ctx context.Context,
-	sourceTags []string,
-	rawIDs any,
-) error {
-	ids := tagIDStrings(rawIDs)
-
-	/*
-		The tag and tag_id arrays are positional siblings in Philomena.
-		If their shapes do not agree, do not guess; the caller will fall
-		back to the exact-name resolver.
-	*/
-	if len(ids) != len(sourceTags) {
-		return nil
+func (d *Derpibooru) resolvePostTags(ctx context.Context, meta map[string]any) ([]string, []tagRecord, error) {
+	sourceTags, err := tagStrings(meta["tags"])
+	if err != nil {
+		return nil, nil, err
 	}
+	ids := tagIDStrings(meta["tag_ids"])
+	if len(sourceTags) == 0 {
+		for _, id := range ids {
+			if id != "" {
+				return nil, nil, fmt.Errorf("Derpibooru returned tag_ids with an empty tags array")
+			}
+		}
+	}
+	// The arrays are positional siblings. An unusable ID or mismatched array
+	// length leaves the corresponding names to the existing exact lookup.
+	lookups := make([]tagLookup, len(sourceTags))
+	idsByName := map[string]string{}
+	namesByID := map[string]string{}
+	for i, name := range sourceTags {
+		lookup := tagLookup{name: normalizeKey(name)}
+		if len(ids) == len(sourceTags) {
+			lookup.id = ids[i]
+		}
+		lookups[i] = lookup
+		if lookup.id == "" {
+			continue
+		}
+		if prev := idsByName[lookup.name]; prev != "" && prev != lookup.id {
+			return nil, nil, fmt.Errorf("Derpibooru tag %q has conflicting ids %s and %s", name, prev, lookup.id)
+		}
+		if prev := namesByID[lookup.id]; prev != "" && prev != lookup.name {
+			return nil, nil, fmt.Errorf("Derpibooru tag id %s has conflicting names %q and %q", lookup.id, prev, name)
+		}
+		idsByName[lookup.name] = lookup.id
+		namesByID[lookup.id] = lookup.name
+	}
+	for i := range lookups {
+		lookups[i].id = idsByName[lookups[i].name]
+	}
+	if err := d.prefillByIDs(ctx, lookups); err != nil {
+		return nil, nil, fmt.Errorf("batch resolving Derpibooru taxonomy: %w", err)
+	}
+	records := make([]tagRecord, len(sourceTags))
+	for i, lookup := range lookups {
+		records[i], err = d.resolve(ctx, lookup, sourceTags[i])
+		if err != nil {
+			return nil, nil, fmt.Errorf("resolving Derpibooru tag %q: %w", sourceTags[i], err)
+		}
+	}
+	return sourceTags, records, nil
+}
 
+func (d *Derpibooru) prefillByIDs(ctx context.Context, lookups []tagLookup) error {
 	const batchSize = 50
 
-	type wanted struct {
-		id   string
-		name string
-	}
-
-	missing := make([]wanted, 0, len(sourceTags))
-
-	for i, sourceName := range sourceTags {
-		if _, ok := d.cached(sourceName); ok {
+	missing := make([]tagLookup, 0, len(lookups))
+	seen := map[string]bool{}
+	for _, lookup := range lookups {
+		if lookup.id == "" || seen[lookup.id] {
 			continue
 		}
-
-		if ids[i] == "" {
-			continue
+		seen[lookup.id] = true
+		if _, ok := d.cached(lookup); !ok {
+			missing = append(missing, lookup)
 		}
-
-		missing = append(
-			missing,
-			wanted{
-				id:   ids[i],
-				name: sourceName,
-			},
-		)
 	}
 
 	for start := 0; start < len(missing); start += batchSize {
-		end := start + batchSize
-		if end > len(missing) {
-			end = len(missing)
+		chunk := missing[start:min(start+batchSize, len(missing))]
+		ids := make([]string, 0, len(chunk))
+		byID := make(map[string]string, len(chunk))
+		byName := make(map[string]tagLookup, len(chunk))
+		for _, lookup := range chunk {
+			ids = append(ids, lookup.id)
+			byID[lookup.id] = lookup.name
+			byName[lookup.name] = lookup
 		}
 
-		chunk := missing[start:end]
-		chunkIDs := make([]string, 0, len(chunk))
-
-		for _, item := range chunk {
-			chunkIDs = append(
-				chunkIDs,
-				item.id,
-			)
-		}
-
-		records, err := d.fetchMany(
-			ctx,
-			chunkIDs,
-		)
+		records, err := d.fetchMany(ctx, ids)
 		if err != nil {
-			return fmt.Errorf(
-				"batch resolving Derpibooru taxonomy: %w",
-				err,
-			)
+			return err
 		}
-
-		d.storeRecords(records)
+		verified := make(map[string]tagRecord, len(chunk))
+		for _, rec := range records {
+			id := strconv.FormatInt(rec.ID, 10)
+			name := normalizeKey(rec.Name)
+			if want, ok := byID[id]; ok && want != name {
+				return fmt.Errorf("Derpibooru tag id %s: expected name %q, got %q", id, want, rec.Name)
+			}
+			lookup, requested := byName[name]
+			if !requested {
+				continue
+			}
+			if err := lookup.checkID(rec); err != nil {
+				return err
+			}
+			if err := rec.validate(); err != nil {
+				return err
+			}
+			if old, ok := verified[name]; ok && old != rec {
+				return fmt.Errorf("Derpibooru returned conflicting records for tag %q (id %s)", name, id)
+			}
+			verified[name] = rec
+		}
+		d.storeRecords(verified)
 	}
-
 	return nil
 }
 
-func (d *Derpibooru) cached(
-	name string,
-) (tagRecord, bool) {
-	key := normalizeKey(name)
-
+func (d *Derpibooru) cached(lookup tagLookup) (tagRecord, bool) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	return d.cachedLocked(lookup)
+}
 
-	rec, ok := d.cache[key]
-	return rec, ok
+func (d *Derpibooru) cachedLocked(lookup tagLookup) (tagRecord, bool) {
+	rec, ok := d.cache[lookup.name]
+	return rec, ok && (lookup.id == "" || lookup.id == strconv.FormatInt(rec.ID, 10))
 }
 
 func (d *Derpibooru) storeRecords(
-	records []tagRecord,
+	records map[string]tagRecord,
 ) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	for _, rec := range records {
-		key := normalizeKey(rec.Name)
-		if key == "" {
-			continue
-		}
-
+	for key, rec := range records {
 		old, exists := d.cache[key]
 
 		if exists && old == rec {
@@ -605,89 +608,70 @@ func tagIDString(v any) string {
 	return ""
 }
 
-func (d *Derpibooru) resolve(
-	ctx context.Context,
-	name string,
-) (tagRecord, error) {
-	key := normalizeKey(name)
-
+func (d *Derpibooru) resolve(ctx context.Context, lookup tagLookup, sourceName string) (tagRecord, error) {
 	d.mu.Lock()
-
-	if rec, ok := d.cache[key]; ok {
+	if rec, ok := d.cachedLocked(lookup); ok {
 		d.mu.Unlock()
 		return rec, nil
 	}
 
-	/*
-		Multiple jobs frequently share common tags. If another goroutine
-		is already resolving this exact tag, wait for its result instead
-		of issuing another HTTP request.
-	*/
-	if call, ok := d.inflight[key]; ok {
-		done := call.done
+	// Only callers asking for the same name and ID share the in-flight result.
+	if call, ok := d.inflight[lookup]; ok {
 		d.mu.Unlock()
-
 		select {
 		case <-ctx.Done():
 			return tagRecord{}, ctx.Err()
-
-		case <-done:
+		case <-call.done:
 			return call.rec, call.err
 		}
 	}
-
-	call := &tagCall{
-		done: make(chan struct{}),
-	}
-
-	d.inflight[key] = call
+	call := &tagCall{done: make(chan struct{})}
+	d.inflight[lookup] = call
 	d.mu.Unlock()
 
-	rec, err := d.fetch(ctx, name)
+	rec, err := d.fetch(ctx, lookup, sourceName)
 
 	d.mu.Lock()
-
 	if err == nil {
-		d.cache[key] = rec
+		d.cache[lookup.name] = rec
 		d.generation++
 	}
-
 	call.rec = rec
 	call.err = err
-
-	delete(d.inflight, key)
+	delete(d.inflight, lookup)
 	close(call.done)
-
 	d.mu.Unlock()
-
 	return rec, err
 }
 
-func (d *Derpibooru) fetch(
-	ctx context.Context,
-	name string,
-) (tagRecord, error) {
-	records, err := d.search(
-		ctx,
-		name,
-		50,
-	)
+func (d *Derpibooru) fetch(ctx context.Context, lookup tagLookup, sourceName string) (tagRecord, error) {
+	records, err := d.search(ctx, sourceName, 50)
 	if err != nil {
 		return tagRecord{}, err
 	}
-
-	for i := range records {
-		if strings.EqualFold(
-			strings.TrimSpace(records[i].Name),
-			strings.TrimSpace(name),
-		) {
-			return records[i], nil
+	var matched tagRecord
+	for _, rec := range records {
+		if normalizeKey(rec.Name) != lookup.name {
+			if lookup.id != "" && lookup.id == strconv.FormatInt(rec.ID, 10) {
+				return tagRecord{}, fmt.Errorf("Derpibooru tag id %s: expected name %q, got %q", lookup.id, lookup.name, rec.Name)
+			}
+			continue
 		}
+		if err := lookup.checkID(rec); err != nil {
+			return tagRecord{}, err
+		}
+		if err := rec.validate(); err != nil {
+			return tagRecord{}, err
+		}
+		if matched.ID != 0 && matched != rec {
+			return tagRecord{}, fmt.Errorf("Derpibooru returned conflicting exact matches for tag %q", sourceName)
+		}
+		matched = rec
 	}
-
-	return tagRecord{}, fmt.Errorf(
-		"no exact tag match returned",
-	)
+	if matched.ID == 0 {
+		return tagRecord{}, fmt.Errorf("no exact tag match returned")
+	}
+	return matched, nil
 }
 
 func (d *Derpibooru) fetchMany(
@@ -991,41 +975,30 @@ func stringValue(v any) string {
 	return s
 }
 
-func tagStrings(v any) []string {
-	var out []string
-
-	switch v := v.(type) {
+func tagStrings(v any) ([]string, error) {
+	var tags []string
+	switch values := v.(type) {
 	case []string:
-		for _, s := range v {
-			s = strings.TrimSpace(s)
-			if s != "" {
-				out = append(out, s)
-			}
-		}
-
+		tags = append([]string(nil), values...)
 	case []any:
-		for _, item := range v {
-			s, ok := item.(string)
+		tags = make([]string, len(values))
+		for i, value := range values {
+			name, ok := value.(string)
 			if !ok {
-				continue
+				return nil, fmt.Errorf("Derpibooru tags entry %d is not a string", i+1)
 			}
-
-			s = strings.TrimSpace(s)
-			if s != "" {
-				out = append(out, s)
-			}
+			tags[i] = name
 		}
-
-	case string:
-		for _, s := range strings.Split(v, ",") {
-			s = strings.TrimSpace(s)
-			if s != "" {
-				out = append(out, s)
-			}
+	default:
+		return nil, fmt.Errorf("Derpibooru tags must be an array of strings")
+	}
+	for i, name := range tags {
+		tags[i] = strings.TrimSpace(name)
+		if tags[i] == "" {
+			return nil, fmt.Errorf("Derpibooru tags entry %d is blank", i+1)
 		}
 	}
-
-	return out
+	return tags, nil
 }
 
 func appendUnique(dst []string, values ...string) []string {

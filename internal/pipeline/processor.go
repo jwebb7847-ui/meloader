@@ -81,7 +81,22 @@ var (
 )
 
 func (p *Processor) UseStore(st *queue.Store) { p.books = st }
-func (p *Processor) enrichTaxonomy(ctx context.Context, meta map[string]any) error {
+func sourceIdentityErr(meta map[string]any) error {
+	if kwdict.String(meta, "category") == mapping.CategoryDerpibooru && mapping.PostID(meta) == "" {
+		return errDerpibooruPostID
+	}
+	return nil
+}
+
+var errDerpibooruPostID = &sourceMetadataError{&outcome.CodedError{
+	Code: outcome.ErrCodeMappingFailed,
+	Msg:  "source identity: Derpibooru requires a positive post id from the extractor",
+}}
+
+func (p *Processor) prepareSourceMetadata(ctx context.Context, meta map[string]any) error {
+	if err := sourceIdentityErr(meta); err != nil {
+		return err
+	}
 	if p.taxonomy == nil {
 		return nil
 	}
@@ -348,7 +363,7 @@ func (p *Processor) processMetadata(ctx context.Context, job *queue.Job, snap *q
 		err = p.manyPostsErr(ctx, snap.URL, meta)
 	}
 	if err == nil {
-		err = p.enrichTaxonomy(ctx, meta)
+		err = p.prepareSourceMetadata(ctx, meta)
 	}
 	if ctx.Err() != nil {
 		return ctx.Err()
@@ -376,14 +391,32 @@ func (p *Processor) processMetadata(ctx context.Context, job *queue.Job, snap *q
 		return nil
 	}
 	res.TagWarnings = slices.Concat(warnings, res.TagWarnings)
-	p.markEnriched(job, snap, res, snap.URL, payload.PostFields)
+	p.markEnriched(job, snap, res, payload.URL, payload.PostFields)
 	return nil
 }
 
 // A stored url with no post link of its own can be the search it came from, and
 // with no md5 monbooru cannot tell the first post's tags from the image's.
 func (p *Processor) manyPostsErr(ctx context.Context, url string, meta map[string]any) error {
-	if kwdict.String(meta, "md5") != "" || p.mapper.PostURL(meta) != "" || p.mapper.KindOf(kwdict.String(meta, "category")) == mapping.KindManga {
+	if err := sourceIdentityErr(meta); err != nil {
+		return err
+	}
+	category := kwdict.String(meta, "category")
+	postURL := p.mapper.PostURL(meta)
+	if category == mapping.CategoryDerpibooru {
+		if site, canonical, ok := p.mapper.CanonicalPostURL(url); ok && site == category {
+			if canonical != postURL {
+				return &sourceMetadataError{&outcome.CodedError{
+					Code: outcome.ErrCodeMappingFailed,
+					Msg:  "source identity: Derpibooru returned a different post than the URL identifies",
+				}}
+			}
+			return nil
+		}
+	} else if postURL != "" || p.mapper.KindOf(category) == mapping.KindManga {
+		return nil
+	}
+	if kwdict.String(meta, "md5") != "" {
 		return nil
 	}
 	res, err := p.runner.Resolve(ctx, url, "1-2", false)
@@ -392,6 +425,13 @@ func (p *Processor) manyPostsErr(ctx context.Context, url string, meta map[strin
 	}
 	if len(res.Items) > 1 && (res.Items[0].ID == "" || res.Items[0].ID != res.Items[1].ID) {
 		return &outcome.CodedError{Code: outcome.ErrCodeUnsupportedURL, Msg: "the url names more than one post"}
+	}
+	if category == mapping.CategoryDerpibooru && (len(res.Items) == 0 ||
+		kwdict.String(res.Items[0].Meta, "category") != category || mapping.PostID(res.Items[0].Meta) != mapping.PostID(meta)) {
+		return &sourceMetadataError{&outcome.CodedError{
+			Code: outcome.ErrCodeMappingFailed,
+			Msg:  "source identity: Derpibooru returned a different post on recheck",
+		}}
 	}
 	return nil
 }
@@ -457,8 +497,11 @@ func (p *Processor) failOnline(ctx context.Context, job, snap *queue.Job, err er
 // or a refetch.
 func (p *Processor) mapEnrichPayload(meta map[string]any, url, md5 string, sim float64) (monbooru.EnrichPayload, []string) {
 	pf := p.mapper.Map(meta)
+	if kwdict.String(meta, "category") == mapping.CategoryDerpibooru {
+		url = p.mapper.PostURL(meta)
+	}
 	return monbooru.EnrichPayload{
-		PostFields: postFieldsFrom(pf, url, kwdict.ID(meta)),
+		PostFields: postFieldsFrom(pf, url, mapping.PostID(meta)),
 		SourceMD5:  md5,
 		Verify:     true,
 		Similarity: sim,
@@ -814,10 +857,14 @@ func (p *Processor) initialItems(resolved []gdl.Item, cbz bool, submittedURL, pa
 // A directlink links its page or the submitted URL, never one rebuilt from
 // the sidecar, whose extension gallery-dl may rewrite.
 func (p *Processor) itemURL(meta map[string]any, submittedURL, pageURL string) string {
-	if kwdict.String(meta, "category") == mapping.CategoryDirectlink {
+	switch kwdict.String(meta, "category") {
+	case mapping.CategoryDirectlink:
 		return cmp.Or(pageURL, submittedURL)
+	case mapping.CategoryDerpibooru:
+		return p.mapper.PostURL(meta)
+	default:
+		return cmp.Or(p.mapper.PostURL(meta), submittedURL)
 	}
-	return cmp.Or(p.mapper.PostURL(meta), submittedURL)
 }
 
 func pageHost(pageURL string) string {
@@ -887,7 +934,7 @@ func (p *Processor) processItems(ctx context.Context, job *queue.Job, entries []
 		}
 		// Source taxonomy is resolved before blacklist and mapping so category-
 		// qualified rules see the same metadata that reaches monbooru.
-		if err := p.enrichTaxonomy(ctx, d.Meta); err != nil {
+		if err := p.prepareSourceMetadata(ctx, d.Meta); err != nil {
 			removeScratch(d.Path)
 			failItem(job, i, errorCode(err), err.Error())
 			continue
@@ -935,7 +982,7 @@ func (p *Processor) processItems(ctx context.Context, job *queue.Job, entries []
 
 func pushMetaFrom(pf mapping.PushFields, path, url string, meta map[string]any) monbooru.PushMeta {
 	return monbooru.PushMeta{
-		PostFields: postFieldsFrom(pf, url, kwdict.ID(meta)),
+		PostFields: postFieldsFrom(pf, url, mapping.PostID(meta)),
 		MD5:        kwdict.String(meta, "md5"),
 		Filename:   filepath.Base(path),
 	}
@@ -1139,7 +1186,7 @@ func (p *Processor) processCBZ(ctx context.Context, job *queue.Job, itemIdx int,
 	}
 	// A bundle can only use the combined metadata after every page passes.
 	for _, d := range downloaded {
-		if err := p.enrichTaxonomy(ctx, d.Meta); err != nil {
+		if err := p.prepareSourceMetadata(ctx, d.Meta); err != nil {
 			if ctx.Err() == nil {
 				failItem(job, itemIdx, errorCode(err), err.Error())
 			}
