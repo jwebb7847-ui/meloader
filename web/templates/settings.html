@@ -190,9 +190,11 @@
     <form method="POST" action="/settings/rules">
       <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
       <div class="field field-separated flow-part-2">
-        <label for="rules-blacklist">2 Blacklist: skip posts with these tags <span class="status-badge status-ok">all sites</span><span class="status-badge status-off">before download</span></label>
+        <label for="rules-blacklist">2 Blacklist: skip posts with these tags <span class="status-badge status-ok">all sites</span></label>
         <textarea id="rules-blacklist" name="blacklist">{{draft .Draft "blacklist" (join .Cfg.Tags.Blacklist "\n")}}</textarea>
         <span class="field-hint">One rule per line. All tags on a line must match. -tag means absent, * is a wildcard.</span>
+        <label class="checkbox-inline"><input type="checkbox" name="strict_blacklist"{{if .Cfg.Tags.StrictBlacklist}} checked{{end}}> Require blacklist verification before downloading</label>
+        <span class="field-hint">Uses source tags. Currently supports Derpibooru, Danbooru and e621 posts and searches with gallery-dl 1.32.19. Unverifiable posts and unsupported download types are withheld.</span>
         {{with .SiteBlacklists}}<span class="field-hint">Sites adding their own rules: {{range .}}<button type="button" class="edit-site btn-link-accent" data-site="{{.Category}}">{{.Category}} +{{.Rules}}</button> {{end}}</span>{{end}}
       </div>
       <div class="field field-separated flow-part-3">

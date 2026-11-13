@@ -1,12 +1,20 @@
-# Blacklist timing review
-
-Reviewed on 2026-11-13 against Meloader `main` at `1eea1f8` and gallery-dl `1.32.19`. This is a policy review ahead of implementation.
+# Blacklist timing
 
 ## Product requirement
 
 The operator wants a user-selected content blocklist that stops matching media before Meloader downloads it. Violence and other operator-defined unwanted content are independent of sexual rating. A nonviolent post can pass at any valid source rating. Blocking a violent depiction of a selected character takes priority over collecting every depiction of that character. Keep the rules configurable and preserve a lightweight, metadata-based workflow. Classification of the media itself is outside this pass.
 
-## Current behavior and evidence
+## Approved policy
+
+**Settings → Rules → Require blacklist verification before downloading** is off by default. It uses the existing global and per-site rules. The initial scope is ordinary Derpibooru, Danbooru, and e621 posts and searches with gallery-dl `1.32.19`. Direct links, pools, extractor handoffs, and replacement downloads are withheld while this mode is active. Mebooru's library gains no outbound calls.
+
+Meloader obtains the source metadata first. A positive match in raw tags can stop a post immediately. Otherwise Meloader verifies the native tag list and rating and, for Derpibooru, obtains authoritative taxonomy. A known blacklist match is a skip. Missing, malformed, or unavailable evidence needed to clear a post produces a visible failure. Meloader binds approval to the verified source, post ID, media URL, tags, and rating. gallery-dl rechecks them before requesting the media, and Meloader checks the download result before upload. Trace reports whether the metadata passed, matched a rule, or could not be verified.
+
+This uses source-supplied metadata. A valid-looking post with an omitted or inaccurate violence tag can still pass. Rules can cover known tag variants and combine tags using the existing syntax. Inspecting the image locally would require receiving its bytes first. Image classification is outside this scope.
+
+## Baseline evidence
+
+Reviewed on 2026-11-13 against Meloader `main` at `1eea1f8` and gallery-dl `1.32.19`.
 
 The existing global and per-site blacklist supports one rule per line, with all terms on a line required to match. Bare tags, category-qualified tags, negation, wildcards, and rating terms are available. The following used synthetic fixtures with no real source media or gallery writes.
 
@@ -21,16 +29,10 @@ The existing global and per-site blacklist supports one rule per line, with all 
 
 The Go probe exercised the existing acquisition pipeline with a fake downloader and mock gallery. A second probe used the actual pinned gallery-dl downloader and counted loopback media GETs. A position filter fetched the shifted post. An ID filter blocked the shifted post and fetched only the eligible ID. An ID filter alone still fetched an eligible ID whose tags had changed. A filter checking that ID and its original tag snapshot made zero media GETs when the tags changed. A malformed gallery-dl filter logged a warning and continued to fetch the files. These observations establish where a transfer gate could work and why an unverified filter string is insufficient.
 
-The current code also handles deep dispatch and bundles differently from ordinary listings. Replacement has its own download path. A direct media URL may offer no usable source tags. A strict mode needs explicit behavior for each route it covers. Trace currently previews the enriched result and cannot establish whether the downloader would request media first.
+## Strict mode verification
 
-## Options to decide
+The opt-in test uses gallery-dl `1.32.19` with synthetic post metadata and a loopback media server. It counts actual media requests and writes only to a mock `Audit_A` gallery. The three nonviolent explicit controls transfer. The category-qualified matches, a taxonomy failure, a new post that shifted into the search, changed tags, a changed media URL, and unsupported direct links make zero media requests. Archive replay adds no media request. A separate test confirms Meloader's preflight catches a malformed gallery-dl predicate before the download pass.
 
-- **Keep the current early checks and fix category timing at the upload boundary.** This preserves throughput and compatibility but can fetch files a selected rule ultimately blocks.
-- **Resolve applicable rules before authorizing transfer.** This meets the requirement for the supported, verified routes. Bare matches can be rejected immediately. Resolve categories only where they could change the verdict. If required evidence is missing, malformed, temporarily unavailable, or changes before transfer, skip or pause with a visible reason. The costs are extra waiting on cold taxonomy lookups and skipped items on sources with weak metadata.
-- **Apply strict handling to every source immediately.** This offers one rule across all routes but would withhold direct links and other items whose metadata cannot establish a verdict. The route coverage needed for a reliable rollout is still open.
-
-Recommendation for decision: make strict pre-download enforcement opt-in with the operator's selected rules. Start with ordinary booru posts and searches. Tie permission to a verified source/post identity and the relevant evidence used for the decision, or transfer the already checked candidate through a path that preserves that association. Keep the existing pre-upload check. Treat unsupported or unverifiable acquisition routes explicitly before presenting them as covered. Make Trace distinguish a pre-download block, an inability to verify, and an allowed transfer.
-
-A future implementation should count actual media requests for blocked matches, changed metadata, shifted listings, and failed verification. Include nonviolent explicit and nonviolent character controls. Source tags determine what this can detect. Missing or inaccurate content tags can still let an unwanted post through when the supplied metadata appears valid.
+Run the opt-in checks with `MELOADER_STRICT_TEST_GDL` set to the pinned gallery-dl virtualenv executable and run `go test ./internal/gdl ./internal/pipeline -run TestStrict -v`. Live Mac validation is pending.
 
 [Current matcher](../../internal/mapping/blacklist.go) · [Acquisition pipeline](../../internal/pipeline/processor.go) · [gallery-dl file dispatch and predicates](https://github.com/mikf/gallery-dl/blob/v1.32.19/gallery_dl/job.py#L252)

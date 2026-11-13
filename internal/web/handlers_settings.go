@@ -21,6 +21,7 @@ import (
 	"github.com/monbooru/monloader/internal/mapping"
 	"github.com/monbooru/monloader/internal/monbooru"
 	"github.com/monbooru/monloader/internal/outcome"
+	"github.com/monbooru/monloader/internal/pipeline"
 	"github.com/monbooru/monloader/internal/shared/contract"
 )
 
@@ -459,6 +460,7 @@ func (s *Server) saveTags(w http.ResponseWriter, r *http.Request) {
 		c.Tags.DropCategories = postedDropCategories(r, c.Tags.DropCategories)
 		if r.Form.Has("blacklist") {
 			c.Tags.Blacklist = blacklist
+			c.Tags.StrictBlacklist = r.FormValue("strict_blacklist") == "on"
 		}
 		return nil
 	})
@@ -484,6 +486,10 @@ func (s *Server) tracePost(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
+	if s.cfg.Current().Tags.StrictBlacklist {
+		s.traceStrictPost(ctx, w, r, raw)
+		return
+	}
 	meta, err := s.runner.FirstPost(ctx, raw)
 	if err != nil {
 		site, _, _ := s.mapper.CanonicalPostURL(raw)
@@ -510,6 +516,52 @@ func (s *Server) tracePost(w http.ResponseWriter, r *http.Request) {
 		trace.PostURL = ""
 	}
 	data := map[string]any{"Trace": trace}
+	s.traceGallery(ctx, trace, data)
+	s.render(w, "tag_trace", data)
+}
+
+func (s *Server) traceStrictPost(ctx context.Context, w http.ResponseWriter, r *http.Request, raw string) {
+	fail := func(err error) {
+		s.render(w, "tag_trace", map[string]any{"Failure": traceFailure{
+			Kind: "err", Msg: "Withheld before download", Detail: err.Error(),
+		}})
+	}
+	res, err := s.runner.ResolveStrict(ctx, raw, "1-1")
+	if err = cmp.Or(err, res.Err); err != nil {
+		fail(err)
+		return
+	}
+	if len(res.Queue) != 0 {
+		fail(errors.New("the source handed off to another extractor"))
+		return
+	}
+	if len(res.Items) == 0 {
+		fail(errors.New("no verifiable post metadata"))
+		return
+	}
+	item := res.Items[0]
+	s.customCategories(r)
+	rules, err := s.mapper.StrictBlacklist(item.Category)
+	if err != nil {
+		fail(err)
+		return
+	}
+	note, meta, err := pipeline.StrictBlacklistVerdict(ctx, s.mapper, s.taxonomy, item, rules)
+	if err != nil {
+		fail(err)
+		return
+	}
+	if note != "" {
+		s.render(w, "tag_trace", map[string]any{"Failure": traceFailure{
+			Kind: "warn", Msg: "Blocked before download", Detail: note,
+		}})
+		return
+	}
+	trace := s.mapper.Trace(meta)
+	if item.Subcategory == "post" {
+		trace.PostURL = ""
+	}
+	data := map[string]any{"Trace": trace, "Strict": true}
 	s.traceGallery(ctx, trace, data)
 	s.render(w, "tag_trace", data)
 }

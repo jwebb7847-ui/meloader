@@ -24,6 +24,7 @@ import (
 )
 
 type Item struct {
+	MediaURL    string
 	Category    string
 	Subcategory string
 	ID          string
@@ -94,6 +95,8 @@ type Runner interface {
 	FetchMeta(ctx context.Context, url string) (map[string]any, error)
 	FirstPost(ctx context.Context, url string) (map[string]any, error)
 	Download(ctx context.Context, url, rng, workDir string, archive Archive, onFile func(Downloaded), deep bool) ([]Downloaded, error)
+	ResolveStrict(ctx context.Context, url, rng string) (ResolveResult, error)
+	DownloadStrict(ctx context.Context, url, rng, workDir string, archive Archive, onFile func(Downloaded), approved []Item) ([]Downloaded, error)
 	ListExtractors(ctx context.Context) ([]Extractor, error)
 	Probe(ctx context.Context, exampleURL string) (ProbeResult, error)
 	DebugLog(ctx context.Context, url, workRoot string) (log string, noExtractor bool, err error)
@@ -170,7 +173,10 @@ const waitDelay = 5 * time.Second
 
 // A non-zero exit is in exitCode, not err, which is only for a failed launch.
 func (t *Tool) run(ctx context.Context, args ...string) (runResult, error) {
-	bin := t.binary()
+	return runBinary(ctx, t.binary(), args...)
+}
+
+func runBinary(ctx context.Context, bin string, args ...string) (runResult, error) {
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.WaitDelay = waitDelay
 	killGroupOnCancel(cmd)
@@ -319,6 +325,10 @@ func (t *Tool) Resolve(ctx context.Context, url, rng string, deep bool) (Resolve
 }
 
 func (t *Tool) resolve(ctx context.Context, url, rng string, deep bool) (ResolveResult, error) {
+	return t.resolveWithOptions(ctx, url, rng, deep, false)
+}
+
+func (t *Tool) resolveWithOptions(ctx context.Context, url, rng string, deep, strict bool) (ResolveResult, error) {
 	args := t.configArgs()
 	args = append(args, resolveOffArgs(t.siteLists())...)
 	mode := "-j"
@@ -326,15 +336,22 @@ func (t *Tool) resolve(ctx context.Context, url, rng string, deep bool) (Resolve
 		mode = "-J"
 	}
 	args = append(args, mode)
-	args = append(args, rangeArgs(rng, deep)...)
-	if !deep {
-		args = append(args, handoffArgs(rng)...)
+	if strict {
+		args = append(args, "--child-filter", "False", "-o", "follow=false")
+		if rng != "" {
+			args = append(args, "--post-range", rng)
+		}
+	} else {
+		args = append(args, rangeArgs(rng, deep)...)
+		if !deep {
+			args = append(args, handoffArgs(rng)...)
+		}
 	}
 	args = append(args, "--", url)
 	out, err := t.runOut(ctx, args...)
 	if err != nil {
 		var ce *outcome.CodedError
-		if errors.As(err, &ce) && ce.Code == outcome.ErrCodeUnsupportedURL {
+		if !strict && errors.As(err, &ce) && ce.Code == outcome.ErrCodeUnsupportedURL {
 			if items, ok := directlinkResolve(ctx, url); ok {
 				return ResolveResult{Items: items}, nil
 			}
@@ -400,16 +417,20 @@ func firstPostMeta(data []byte) (map[string]any, error) {
 // The download always follows Message.Queue handoffs; deep only moves the
 // window to --chapter-range.
 func (t *Tool) Download(ctx context.Context, url, rng, workDir string, archive Archive, onFile func(Downloaded), deep bool) ([]Downloaded, error) {
-	dls, err := t.download(ctx, url, rng, workDir, archive, onFile, deep)
+	dls, err := t.download(ctx, url, rng, workDir, archive, onFile, deep, "", t.binary())
 	return dls, t.redact(err)
 }
 
-func (t *Tool) download(ctx context.Context, url, rng, workDir string, archive Archive, onFile func(Downloaded), deep bool) ([]Downloaded, error) {
+func (t *Tool) download(ctx context.Context, url, rng, workDir string, archive Archive, onFile func(Downloaded), deep bool, gate, bin string) ([]Downloaded, error) {
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
 		return nil, &outcome.CodedError{Code: outcome.ErrCodeDownloadFailed, Msg: err.Error()}
 	}
-	args := append(t.configArgs(), downloadArgs(workDir, rng, url, archive, deep)...)
-	bin := t.binary()
+	args := t.configArgs()
+	if gate == "" {
+		args = append(args, downloadArgs(workDir, rng, url, archive, deep)...)
+	} else {
+		args = append(args, strictDownloadArgs(workDir, rng, url, archive, gate)...)
+	}
 	runCtx, stop := context.WithCancel(ctx)
 	defer stop()
 	cmd := exec.CommandContext(runCtx, bin, args...)
@@ -456,7 +477,7 @@ func (t *Tool) download(ctx context.Context, url, rng, workDir string, archive A
 	}
 	if exit != 0 {
 		cerr := t.runError(exit, strings.TrimSpace(errBuf.String()))
-		if cerr.Code == outcome.ErrCodeUnsupportedURL {
+		if gate == "" && cerr.Code == outcome.ErrCodeUnsupportedURL {
 			if dls, ok, derr := directlinkDownload(ctx, url, workDir, onFile); ok {
 				return dls, derr
 			}
@@ -658,7 +679,11 @@ func parseResolve(data []byte) (ResolveResult, error) {
 			continue
 		}
 		res.setCategory(meta)
-		res.Items = append(res.Items, itemFromMeta(meta))
+		item := itemFromMeta(meta)
+		if len(parts) >= 3 {
+			_ = json.Unmarshal(parts[1], &item.MediaURL)
+		}
+		res.Items = append(res.Items, item)
 	}
 	if len(res.Items) == 0 && len(res.Queue) == 0 && gdlErr != nil {
 		return ResolveResult{}, gdlErr

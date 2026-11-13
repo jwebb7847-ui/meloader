@@ -83,8 +83,9 @@ type DownloaderConfig struct {
 type TagsConfig struct {
 	// A deny list, so a category monbooru gains later is sent until
 	// someone says otherwise.
-	DropCategories []string `toml:"drop_categories,omitempty"`
-	Blacklist      []string `toml:"blacklist,omitempty"`
+	DropCategories  []string `toml:"drop_categories,omitempty"`
+	Blacklist       []string `toml:"blacklist,omitempty"`
+	StrictBlacklist bool     `toml:"strict_blacklist,omitempty"`
 }
 
 func (d DownloaderConfig) HistoryRetention() time.Duration {

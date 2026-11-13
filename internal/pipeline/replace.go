@@ -25,6 +25,10 @@ import (
 // bypasses the archive.
 func (p *Processor) processReplace(ctx context.Context, job, snap *queue.Job) error {
 	job.SetItems([]queue.Item{{URL: snap.URL, Status: queue.ItemPending}})
+	if p.cfg.Current().Tags.StrictBlacklist {
+		p.failEnrichFetch(ctx, job, snap, strictBlacklistError("pre-download verification is unavailable for replacement jobs"))
+		return nil
+	}
 	res, err := p.runner.Resolve(ctx, snap.URL, "", false)
 	if err != nil {
 		p.failEnrichFetch(ctx, job, snap, err)

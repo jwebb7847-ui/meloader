@@ -165,12 +165,15 @@ func (m *Mapper) blacklistRules(category string) []blacklistRule {
 // a category is left for the sidecar: its -artist:x would hold on any post.
 func (m *Mapper) Blacklisted(meta map[string]any) (note string, blacklisted bool) {
 	category := kwdict.String(meta, "category")
-	rules := m.blacklistRules(category)
+	profile := m.profileFor(category)
+	return m.matchBlacklist(meta, profile, m.blacklistRules(category), m.flatOnly(profile, meta), nil)
+}
+
+func (m *Mapper) matchBlacklist(meta map[string]any, profile Profile, rules []blacklistRule, flatOnly bool, tags []postTag) (string, bool) {
 	if len(rules) == 0 {
 		return "", false
 	}
-	profile := m.profileFor(category)
-	var tags []postTag
+	category := kwdict.String(meta, "category")
 	m.eachTag(category, profile, meta, func(_, _, s string) {
 		for _, read := range blacklistReads(profile, s) {
 			tags = append(tags, splitPostTag(read))
@@ -178,7 +181,7 @@ func (m *Mapper) Blacklisted(meta map[string]any) (note string, blacklisted bool
 	}, func(_, _, s string) {
 		tags = append(tags, splitPostTag(normalizeTag(s)))
 	})
-	rule, hit := firstBlacklistRule(rules, tags, m.postRating(category, profile, meta), m.flatOnly(profile, meta))
+	rule, hit := firstBlacklistRule(rules, tags, m.postRating(category, profile, meta), flatOnly)
 	if !hit {
 		return "", false
 	}
