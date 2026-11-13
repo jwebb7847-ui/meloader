@@ -119,6 +119,36 @@ fi
 
 This requests post **metadata over the internet**, not the image media, and does not import into Mebooru. A site refusal or removed example post is a separate access/extractor issue. If no executable is found, verify the audit configuration's `gallerydl.binary_path` *locally* (do not share the whole TOML file, as it may hold secrets) or install the pinned gallery-dl into a separate temporary Python virtual environment for the test. **Do not change the application's configuration or add a global installer just to satisfy this check.**
 
+### Follow-up: JSON contains one `HttpError`, no reported HTTP status
+
+The 2026-11-13 macOS attempt with isolated gallery-dl 1.32.19 returned **one** `[-1, {"error": "HttpError", ...}]`-style message and no e621 post fields. A diagnostic that searched the error text for a three-digit HTTP status found none. This is **inconclusive** as to the root cause. In upstream 1.32.19, an `HttpError` can be raised after a network/transport exception without an HTTP response; do not assume 403, 429 or a removed post.
+
+Inspect the pre-existing file without making another HTTP request:
+
+```sh
+OUT="${TMPDIR:-/tmp}/e621-rating-check.json"
+python3 - "$OUT" <<'PY'
+import json
+import re
+import sys
+from pathlib import Path
+
+messages = json.loads(Path(sys.argv[1]).read_text())
+errors = [msg[-1] for msg in messages
+          if isinstance(msg, list) and msg and msg[0] == -1
+          and isinstance(msg[-1], dict)]
+if not errors:
+    raise SystemExit("No embedded gallery-dl extractor error found")
+for error in errors:
+    message = str(error.get("message", ""))
+    message = re.sub(r"https?://[^\\s\"'<>]+", "[URL REDACTED]", message)
+    print("Error class:", error.get("error", "unknown"))
+    print("Redacted detail:", message[:350] or "(empty)")
+PY
+```
+
+Do not share unredacted raw JSON or a configuration file. If the detail names a connection/proxy/SSL/DNS/timeout problem, classify the live check as **environment blocked** while keeping the already-passed local mapping and upload-boundary tests intact. If the detail includes an HTTP status, investigate site access or post availability separately. Do not repeatedly probe a blocked host.
+
 ## Running the application from the checked-out source
 
 Only when the dedicated audit configuration is present and the usual port is free:
