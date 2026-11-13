@@ -363,6 +363,10 @@ func (p *Processor) processMetadata(ctx context.Context, job *queue.Job, snap *q
 		p.failEnrichFetch(ctx, job, snap, err)
 		return nil
 	}
+	if err := p.ratingErr(meta); err != nil {
+		p.failEnrichFetch(ctx, job, snap, err)
+		return nil
+	}
 	payload, warnings := p.mapEnrichPayload(meta, snap.URL, kwdict.String(meta, "md5"), 0)
 	res, err := p.client.EnrichImage(ctx, snap.ImageID, snap.Gallery, payload)
 	if err != nil {
@@ -414,6 +418,19 @@ func (p *Processor) flattenedErr(meta map[string]any) error {
 }
 
 var errFlattened = &outcome.CodedError{Code: outcome.ErrCodeMappingFailed, Msg: mapping.FlattenedTagsMsg}
+
+// A malformed or missing rating from a source that is known to provide one
+// must not be sent as unrated: Mebooru permits unrated items under every
+// rating ceiling. Truly unrated sources remain valid.
+func (p *Processor) ratingErr(meta map[string]any) error {
+	if err := p.mapper.ValidateSourceRating(meta); err != nil {
+		return &outcome.CodedError{
+			Code: outcome.ErrCodeMappingFailed,
+			Msg:  "source rating: " + err.Error(),
+		}
+	}
+	return nil
+}
 
 // monbooru records an enrich it refused; a post stopped before the enrich it
 // has to be told of.
@@ -878,6 +895,11 @@ func (p *Processor) processItems(ctx context.Context, job *queue.Job, entries []
 			failItem(job, i, errorCode(err), err.Error())
 			continue
 		}
+		if err := p.ratingErr(d.Meta); err != nil {
+			removeScratch(d.Path)
+			failItem(job, i, errorCode(err), err.Error())
+			continue
+		}
 		pf := p.mapper.Map(d.Meta)
 
 		labelFrom := kwdict.String(d.Meta, "category")
@@ -1105,6 +1127,14 @@ func (p *Processor) processCBZ(ctx context.Context, job *queue.Job, itemIdx int,
 	if len(pages) < total {
 		failItem(job, itemIdx, outcome.ErrCodeDownloadFailed, fmt.Sprintf("bundled %d of %d pages", len(pages), total))
 		return
+	}
+	// A pool or book aggregates several posts; one invalid source rating
+	// must never be hidden by a valid rating from a different page.
+	for _, d := range downloaded {
+		if err := p.ratingErr(d.Meta); err != nil {
+			failItem(job, itemIdx, errorCode(err), err.Error())
+			return
+		}
 	}
 
 	dest := filepath.Join(workDir, "bundle.cbz")
