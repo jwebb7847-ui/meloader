@@ -290,6 +290,20 @@ The median of the three warm load-plus-processing totals was **2.043 ms**. The c
 
 Posts in listing order: `3931277 3931184 3931173 3931162 3931149 3931126 3931098 3931062 3931023 3931022 3931021 3931020 3931019 3931018 3931017 3930996 3930986 3930944 3930943 3930940`.
 
+## 7. Post-merge Derpibooru upgrade smoke test
+
+On 2026-11-13, the operator ran the merged Meloader build (`3aa5aca`, PR #5) with the copied audit setup against Mebooru's `Audit_A` gallery. The first run of a fixed five-post Derpibooru search succeeded with **5 created** and **142 tag assignments submitted**. The completed job was visible immediately after Meloader restarted. Submitting the same search again succeeded with **0 created, 5 skipped, and 0 failed**. Every replay row was labeled `already fetched`.
+
+| Derpibooru post | Initial run | Replay after restart |
+| --- | --- | --- |
+| `3931277` | Created, 11 tags sent | Already fetched |
+| `3931184` | Created, 26 tags sent | Already fetched |
+| `3931173` | Created, 19 tags sent | Already fetched |
+| `3931162` | Created, 40 tags sent | Already fetched |
+| `3931149` | Created, 46 tags sent | Already fetched |
+
+**Result:** Five live imports, queue history reload, and archive skips after restart passed. The queue screenshot shows submitted tag counts and per-item outcomes. Per-image ratings, tag categories, source links, and taxonomy-cache reuse on this build still need direct verification.
+
 ## Remaining acceptance gates
 
 - [x] Positive Derpibooru source -> Mebooru Audit_A -> per-image metadata, tags and original source persisted
@@ -304,5 +318,7 @@ Posts in listing order: `3931277 3931184 3931173 3931162 3931149 3931126 3931098
 - [x] Bounded 20-position workload and full 20-new-image continuation accepted and timed; source metadata spot-checked in the first window
 - [x] Malformed-rating test against the running local Audit_A server passed: one rejected item, one upload attempt and one SHA-256-verified control
 - [x] Bounded live Derpibooru cold/warm taxonomy measurement passed: 20 posts, identical tags across all passes and zero warm taxonomy HTTP attempts
+- [x] Post-merge Derpibooru smoke test passed for five live imports, queue history reload and archive skips after restart
+- [ ] Verify per-image rating, tag categories and source links on the post-merge batch, and confirm taxonomy-cache reuse on the merged build
 - [ ] Live e621 categorized extractor confirmation (deferred for transport reset; do not block all other testing)
 - [ ] Source taxonomy semantic decisions beyond the approved rating-integrity distinction (discuss before changes)
