@@ -212,6 +212,7 @@ Stop it with Ctrl+C. Do not use an older compiled binary or kill an unknown proc
 - [x] Diagnose global Mebooru footer `monloader auth rejected`: reverse-link `api_url` incorrectly targeted Mebooru on 8455; the existing bearer token returned HTTP 200 against real Meloader on 8456
 - [x] Operator confirmed Mebooru `connected to monloader dev` after correcting `[monloader].api_url` to 8456 and restarting; existing bearer token accepted and no re-pair was necessary
 - [ ] Live **e621** categorized metadata extraction; pinned gallery-dl 1.32.19 encountered a peer connection reset, not a source-mapping failure
-- [ ] Controlled real **negative** source-rating refusal with a safely isolated test setup if needed; invalid/missing known-booru ratings have already passed real-pipeline-to-mock-HTTP no-upload tests
+- [ ] Run the opt-in [malformed-rating test against local Audit_A](negative-path-throughput.md#5-malformed-source-rating-against-the-running-audit-gallery); invalid/missing known-booru ratings have already passed real-pipeline-to-mock-HTTP no-upload tests
 - [ ] Review e621 `lore` and `contributor` mapping **separately**; do not conflate with rating integrity
-- [ ] End-to-end acquisition throughput and cache behavior for larger workloads
+- [x] Bounded Safebooru end-to-end acquisition: five new images in ~12 s and 20 new images in ~35 s; see the [staged workload results](negative-path-throughput.md#bounded-20-post-safebooru-run-and-continuation--passed)
+- [ ] Compare larger workloads that exercise source taxonomy cache behavior

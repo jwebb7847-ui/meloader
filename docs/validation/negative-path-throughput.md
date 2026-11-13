@@ -233,6 +233,47 @@ After the one-post cross-family import works:
 
 For every run, record the source URL/query, gallery, two running server commit SHAs, gallery-dl version, job window, start/end time, successes/skips/failures and first failure reason. **Do not conflate** these real-run results with the mock HTTP benchmark.
 
+### Bounded 20-post Safebooru run and continuation — PASSED
+
+The operator used the same Safebooru listing and the running Meloader/Mebooru audit services, with `Audit_A` as the destination. Times are approximate operator stopwatch readings. Counts below apply to each window.
+
+| Window | Source posts (descending) | Created | Archive skips | Failed | Tags submitted | Elapsed |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Up to 20 | `7303987` through `7303968` | 15 | 5 | 0 | 552 | ~31 s |
+| Get next 20 | `7303967` through `7303948` | 20 | 0 | 0 | 880 | ~35 s |
+
+The five archive skips in the first window were the previously fetched posts `7303986` through `7303982`. The continuation began at the next listing position and imported all 20 rows. The full new-image batch averaged ~1.75 seconds per created image end to end. The stopwatch includes the source, transfer and storage steps, so it cannot isolate taxonomy or database time. The earlier 20-position run also included five skips and is a mixed workload.
+
+Mebooru image ID `24` (source post `7303972`, first 20-position window) showed its general rating, meta `highres`, copyright `golden_kamuy`, characters `asirpa` and `ogata_hyakunosuke`, general tags, Safebooru attribution, and an original `i.pximg.net` link. The continuation screenshot verifies the acquisition outcomes and submitted counts. Runtime SHAs and downloaded bytes were not independently captured in the batch screenshots.
+
+## 5. Malformed source rating against the running audit gallery
+
+Use the detached Meloader QA worktree, with the existing Mebooru audit server already listening at `127.0.0.1:8455`. The opt-in test reads the existing Meloader audit config for its Mebooru endpoint and token, confirms `Audit_A` exists, and uses a loopback proxy to count upload attempts. A synthetic two-item Safebooru batch contains a malformed native rating and a valid `s` rating. The fixtures are generated PNGs, so the test requires no external source requests. Expect `mapping_failed` on the malformed item, exactly one upload attempt for the control, and a verified SHA-256 for the resulting image in `Audit_A`.
+
+From the QA checkout at the revision containing the opt-in test:
+
+```sh
+MELOADER_LIVE_RATING_AUDIT_CONFIG="$HOME/Library/Application Support/Monloader Audit/monloader.toml" \
+  go test -race ./internal/pipeline -run '^TestRatingIntegrityAgainstLocalAuditGallery
+
+- [x] Positive Derpibooru source -> Mebooru Audit_A -> per-image metadata, tags and original source persisted
+- [x] Reverse Mebooru -> Meloader authenticated health restored with existing bearer token
+- [x] Expanded mixed-batch rejection and normal source-rating cases passed Go race+vet CI (run 43356175480)
+- [x] Local Apple M5 negative-path/rating tests passed in mapping and pipeline at commit `41c954b` (`go test -race`, 1.533s/1.564s)
+- [x] Execute local Apple M5 loopback HTTP benchmark: median 20=2,118 posts/s, 200=6,130 posts/s, 1,000=5,840 posts/s; synthetic 16-KiB files and mock Mebooru only
+- [x] Metadata-only source contrast: Derpibooru original and retest consistent, Safebooru post 1169132 confirmed as a single post with native `s` and five categorized tag fields; e621/Danbooru remain reset-blocked
+- [x] Safebooru image HEAD preflight passed with verified curl TLS, `image/jpeg`, `247882` bytes (0.24 MiB); Python 3.12's own default CA-file lookup was unresolved and its urllib HEAD failed certificate verification
+- [x] One live alternate-family Safebooru/Gelbooru-v02 post imported to Audit_A with `rating:general`, all 10 categorized per-image tags and source provenance (Mebooru ID 8); Danbooru-specific live rating `s -> sensitive` remains unverified due to transport reset
+- [x] Five-post Safebooru acquisition and spot-checked metadata persistence accepted: all 5 created, ~12 s wall-time, 207 tags submitted, exact `...` validator warning intentionally rejected; Audit_A image IDs 9 and 11 confirm rating/category/source preservation
+- [x] Bounded 20-position workload and full 20-new-image continuation accepted and timed; source metadata spot-checked in the first window
+- [ ] Run the opt-in malformed-rating test against the local Audit_A server
+- [ ] Live e621 categorized extractor confirmation (deferred for transport reset; do not block all other testing)
+- [ ] Source taxonomy semantic decisions beyond the approved rating-integrity distinction (discuss before changes)
+ -count=1 -v
+```
+
+A passing run leaves one synthetic control image in `Audit_A` and reports its image ID. The test removes its local scratch PNGs and reads the audit config without saving changes.
+
 ## Remaining acceptance gates
 
 - [x] Positive Derpibooru source -> Mebooru Audit_A -> per-image metadata, tags and original source persisted
