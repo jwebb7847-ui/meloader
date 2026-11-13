@@ -187,11 +187,24 @@ fi
 
 Stop it with Ctrl+C. Do not use an older compiled binary or kill an unknown process just because it owns port 8456. Running the application is not necessary for the Go unit/integration test above; and to test a real push into Mebooru we must also verify Mebooru's commit, launch command, config, gallery, and local data root.
 
+## Live positive acceptance — Derpibooru to Mebooru (2026-11-13)
+
+**Reported environment:** two source-based `go run` instances, Mebooru on `127.0.0.1:8455` at `mebooru-foundation` (`fbb5232`) and Meloader on `127.0.0.1:8456` at `meloader-item3-rating-integrity` (`11a894c` at last verified source synchronization). Both used explicit `~/Library/Application Support/* Audit/*.toml` configurations. Meloader targeted local Mebooru and `Audit_A`. Isolated `gallery-dl 1.32.19` was selected with `MONLOADER_GALLERYDL_BINARY_PATH`. The exact running process revision was not independently recorded after relaunch; the commit IDs are the previously verified target branch heads.
+
+**Metadata-only preflight:** `https://derpibooru.org/images/3796956` returned `Source: derpibooru`, `Post ID: 3796956`, `Source rating tags: ['safe']`, `Tag count: 19`, `Metadata preflight: PASS`.
+
+**Real import operator evidence:** Meloader queue row for the same URL showed `succeeded`, `derpibooru`, gallery `Audit_A`, `1 created`; expanded item `post 3796956` showed `created`, `19 tags sent`. Mebooru's sidebar showed `general` under rating and recognizable artist, character, species, meta and general taxonomy. **Important:** sidebar counts are gallery-wide, so we still need to open the imported image's own detail view to verify its exact persisted rating, source provenance and tag categories.
+
+**Result:** positive live post acquisition -> tag/category mapping -> real Mebooru HTTP import is **successful**. Item-level persistence verification and negative control remain outstanding; e621 network blockage is independent. No production library or `home` gallery was intentionally targeted.
+
 ## Remaining gates
 
 - [x] Full Go race detector and vet on code change `16d4908`
 - [x] Real pipeline -> mock HTTP upload boundary across valid, invalid, missing, genuinely unrated and bundled cases
-- [ ] Live gallery-dl rating/category extraction without media download
-- [ ] Controlled actual Meloader-to-Mebooru import into an explicitly selected disposable audit gallery using a pinned commit pair
+- [x] Live gallery-dl **Derpibooru** metadata-only extraction: post 3796956 produced `category=derpibooru`, `id=3796956`, a `safe` rating tag and 19 source tags
+- [x] Controlled **positive** real Meloader-to-Mebooru import: single Derpibooru post 3796956 routed to disposable `Audit_A` and returned `succeeded`, `1 created`, `19 tags sent`
+- [ ] Confirm the imported item's **individual** detail view shows `rating:general`, the correct source link, and artist/character/species/meta/general category assignments; the supplied Mebooru screenshot is a **gallery-wide facet list**, which alone cannot prove the attributes belong to this specific imported item
+- [ ] Live **e621** categorized metadata extraction; pinned gallery-dl 1.32.19 encountered a peer connection reset, not a source-mapping failure
+- [ ] Controlled real **negative** source-rating refusal with a safely isolated test setup if needed; invalid/missing known-booru ratings have already passed real-pipeline-to-mock-HTTP no-upload tests
 - [ ] Review e621 `lore` and `contributor` mapping **separately**; do not conflate with rating integrity
 - [ ] End-to-end acquisition throughput and cache behavior for larger workloads
