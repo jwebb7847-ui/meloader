@@ -419,15 +419,21 @@ func (p *Processor) flattenedErr(meta map[string]any) error {
 
 var errFlattened = &outcome.CodedError{Code: outcome.ErrCodeMappingFailed, Msg: mapping.FlattenedTagsMsg}
 
-// A malformed or missing rating from a source that is known to provide one
-// must not be sent as unrated: Mebooru permits unrated items under every
-// rating ceiling. Truly unrated sources remain valid.
+// A malformed or missing rating from a source known to provide one must
+// not be sent as unrated: Mebooru permits unrated items under every ceiling.
+// Keep the error's identity so online refetches report their failures too.
+type invalidSourceRatingError struct {
+	*outcome.CodedError
+}
+
+func (e *invalidSourceRatingError) Unwrap() error { return e.CodedError }
+
 func (p *Processor) ratingErr(meta map[string]any) error {
 	if err := p.mapper.ValidateSourceRating(meta); err != nil {
-		return &outcome.CodedError{
+		return &invalidSourceRatingError{&outcome.CodedError{
 			Code: outcome.ErrCodeMappingFailed,
 			Msg:  "source rating: " + err.Error(),
-		}
+		}}
 	}
 	return nil
 }
@@ -435,7 +441,8 @@ func (p *Processor) ratingErr(meta map[string]any) error {
 // monbooru records an enrich it refused; a post stopped before the enrich it
 // has to be told of.
 func (p *Processor) failOnline(ctx context.Context, job, snap *queue.Job, err error) {
-	if errors.Is(err, errFlattened) {
+	var badRating *invalidSourceRatingError
+	if errors.Is(err, errFlattened) || errors.As(err, &badRating) {
 		p.failEnrichFetch(ctx, job, snap, err)
 		return
 	}
