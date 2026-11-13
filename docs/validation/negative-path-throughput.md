@@ -254,22 +254,7 @@ From the QA checkout at the revision containing the opt-in test:
 
 ```sh
 MELOADER_LIVE_RATING_AUDIT_CONFIG="$HOME/Library/Application Support/Monloader Audit/monloader.toml" \
-  go test -race ./internal/pipeline -run '^TestRatingIntegrityAgainstLocalAuditGallery
-
-- [x] Positive Derpibooru source -> Mebooru Audit_A -> per-image metadata, tags and original source persisted
-- [x] Reverse Mebooru -> Meloader authenticated health restored with existing bearer token
-- [x] Expanded mixed-batch rejection and normal source-rating cases passed Go race+vet CI (run 43356175480)
-- [x] Local Apple M5 negative-path/rating tests passed in mapping and pipeline at commit `41c954b` (`go test -race`, 1.533s/1.564s)
-- [x] Execute local Apple M5 loopback HTTP benchmark: median 20=2,118 posts/s, 200=6,130 posts/s, 1,000=5,840 posts/s; synthetic 16-KiB files and mock Mebooru only
-- [x] Metadata-only source contrast: Derpibooru original and retest consistent, Safebooru post 1169132 confirmed as a single post with native `s` and five categorized tag fields; e621/Danbooru remain reset-blocked
-- [x] Safebooru image HEAD preflight passed with verified curl TLS, `image/jpeg`, `247882` bytes (0.24 MiB); Python 3.12's own default CA-file lookup was unresolved and its urllib HEAD failed certificate verification
-- [x] One live alternate-family Safebooru/Gelbooru-v02 post imported to Audit_A with `rating:general`, all 10 categorized per-image tags and source provenance (Mebooru ID 8); Danbooru-specific live rating `s -> sensitive` remains unverified due to transport reset
-- [x] Five-post Safebooru acquisition and spot-checked metadata persistence accepted: all 5 created, ~12 s wall-time, 207 tags submitted, exact `...` validator warning intentionally rejected; Audit_A image IDs 9 and 11 confirm rating/category/source preservation
-- [x] Bounded 20-position workload and full 20-new-image continuation accepted and timed; source metadata spot-checked in the first window
-- [ ] Run the opt-in malformed-rating test against the local Audit_A server
-- [ ] Live e621 categorized extractor confirmation (deferred for transport reset; do not block all other testing)
-- [ ] Source taxonomy semantic decisions beyond the approved rating-integrity distinction (discuss before changes)
- -count=1 -v
+  go test -race ./internal/pipeline -run '^TestRatingIntegrityAgainstLocalAuditGallery$' -count=1 -v
 ```
 
 A passing run leaves one synthetic control image in `Audit_A` and reports its image ID. The test removes its local scratch PNGs and reads the audit config without saving changes.
@@ -285,6 +270,7 @@ A passing run leaves one synthetic control image in `Audit_A` and reports its im
 - [x] Safebooru image HEAD preflight passed with verified curl TLS, `image/jpeg`, `247882` bytes (0.24 MiB); Python 3.12's own default CA-file lookup was unresolved and its urllib HEAD failed certificate verification
 - [x] One live alternate-family Safebooru/Gelbooru-v02 post imported to Audit_A with `rating:general`, all 10 categorized per-image tags and source provenance (Mebooru ID 8); Danbooru-specific live rating `s -> sensitive` remains unverified due to transport reset
 - [x] Five-post Safebooru acquisition and spot-checked metadata persistence accepted: all 5 created, ~12 s wall-time, 207 tags submitted, exact `...` validator warning intentionally rejected; Audit_A image IDs 9 and 11 confirm rating/category/source preservation
-- [ ] Bounded 20-post live workload accepted, measured and checked for source metadata fidelity
+- [x] Bounded 20-position workload and full 20-new-image continuation accepted and timed; source metadata spot-checked in the first window
+- [ ] Run the opt-in malformed-rating test against the local Audit_A server
 - [ ] Live e621 categorized extractor confirmation (deferred for transport reset; do not block all other testing)
 - [ ] Source taxonomy semantic decisions beyond the approved rating-integrity distinction (discuss before changes)
