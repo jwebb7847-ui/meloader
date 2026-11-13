@@ -118,4 +118,4 @@ Complete invasive Monloader/Monbooru naming migration only when architecture and
 - How to represent an adapter's answer at the field level (resolved / absent / invalid) and distinguish authoritative uncertainty from a broken payload.
 - Decide native category fidelity and how much raw source metadata to retain for future audits.
 - Where to draw the contract boundary between `internal/taxonomy` and a future more general source-adapter package.
-- e621 is the selected second-source contrast. Its direct categorized path passed for post `535`. Review `lore` and `contributor` with a representative post before changing category policy or considering an adapter.
+- e621 is the selected second-source contrast. Its direct categorized path passed for post `535`. [Live representative traces](docs/validation/e621.md#live-lore-and-contributor-traces--2026-11-13) verified `lore → meta` and `contributor → artist`. Decide whether to represent those native categories separately before changing category policy.
