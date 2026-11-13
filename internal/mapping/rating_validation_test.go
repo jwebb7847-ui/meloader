@@ -74,3 +74,19 @@ func TestValidateSourceRatingDoesNotLetUserOverrideLegitimizeBadSourceClaim(t *t
 		t.Fatalf("user override of valid source rating = %q, want sensitive", got)
 	}
 }
+
+
+func TestTraceReportsRatingIntegrityRefusal(t *testing.T) {
+	m, err := New(config.NewProvider(config.Default()), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bad := m.Trace(map[string]any{"category": "e621", "rating": "nonsense"})
+	if !strings.Contains(bad.Refused, "source rating: ") {
+		t.Fatalf("trace refusal = %q; expected source-rating diagnostic", bad.Refused)
+	}
+	unrated := m.Trace(map[string]any{"category": "unprofiled-photography"})
+	if unrated.Refused != "" {
+		t.Fatalf("a genuinely unrated generic post was refused in trace: %q", unrated.Refused)
+	}
+}
