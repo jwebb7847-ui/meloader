@@ -1,6 +1,6 @@
 # Item 3B — Source semantics contract (proposal)
 
-**Status: PROPOSED / PRODUCT REVIEW REQUIRED.** This is a design discussion, not an implemented policy or a change to user-visible behavior. Do not consider it approved merely because it appears in the repository.
+**Status: PARTIALLY APPROVED.** The invalid-rating versus genuinely unrated distinction was approved on 2026-11-13 and is being implemented on a separate feature branch. Other questions in this document remain proposals; do not consider them approved merely because they appear here.
 
 **Reviewed against:** Meloader `meloader-item3-e621-validation` at `67685c8`, including `internal/taxonomy/registry.go`, `internal/taxonomy/derpibooru.go`, `internal/mapping/map.go`, and `internal/pipeline/processor.go`; source-side expectations validated with pinned gallery-dl v1.32.19. See [ROADMAP.md](../../ROADMAP.md).
 
@@ -68,7 +68,7 @@ Mebooru currently records source membership and tag-origin provenance, but this 
 
 Today, a malformed or unknown rating can map to the empty string; the code comments note that an unrated item is visible under every Mebooru rating ceiling. This is an existing policy behavior, **not** an endorsement of treating an invalid rating as safe.
 
-**Review question:** For a source *expected* to provide a rating, should a genuinely invalid/contradictory rating place the item into manual review / refuse the automatic push instead of allowing it to appear unrated? Distinguish this from a source that legitimately has no rating. Do not implement stricter handling until we agree on semantics and UI consequences.
+**Approved decision (2026-11-13):** A known rating-bearing booru family must provide a valid and nonconflicting rating or the item is refused before automatic import. Generic and unprofiled sources are allowed to remain unrated. Current validation accepts known family rating syntax and built-in profile rating overrides, then applies user overrides to the final rating; a user override does not retroactively make a malformed source claim authoritative. For Philomena, contradictory `safe`/`suggestive`/`questionable`/`explicit` rating tags or conflict between a rating field and tags are refused. Profile defaults can justify a truly missing rating, but not an explicitly malformed one. Use existing `mapping_failed` reporting; this is not an automatic Mebooru holding-folder implementation. A future local AI audit of genuinely unrated library entries remains a separate feature.
 
 ## Performance constraints
 
@@ -93,7 +93,7 @@ Today, a malformed or unknown rating can map to the empty string; the code comme
 
 1. **Source authority vs user control:** adapters establish what a tag means *at the source*; users can still reclassify or suppress what is saved in Mebooru, but cannot retroactively change the reported source fact. Recommend **yes**.
 2. **Invalid required taxonomy:** when a categorizing site unexpectedly supplies a flat-only payload or required authoritative lookup fails, prefer a visible failed/retryable item over silently misclassifying every tag. This matches the current Derpibooru/e621 guard. Recommend **retain**.
-3. **Invalid required rating:** should a known-rated site's malformed/conflicting rating block automatic import or enter a review state rather than appear unrated? **Needs discussion** because the current behavior permits unrated content under every rating ceiling.
+3. **Invalid required rating — APPROVED 2026-11-13:** A source from a known rating-bearing booru family with missing, malformed, or conflicting rating evidence must fail visibly before its metadata/file is automatically pushed. A genuinely unrated generic source may remain unrated. This is approved separately from any Mebooru default filter or future local AI classification workflow. Implementation is in `meloader-item3-rating-integrity` (pending CI and review), with no change to the Mebooru contract.
 4. **Category fidelity:** should `lore` and `contributor` (and other native categories) have distinct Mebooru categories when available, or remain mapped to today's broader `meta`/`artist`? **Needs a category-model discussion**, not a rushed source-adapter patch.
 5. **Raw metadata retention:** retain enough raw evidence for debugging versus persist full upstream payloads. **Defer** until storage/privacy/operational costs are defined.
 
