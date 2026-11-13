@@ -302,7 +302,9 @@ On 2026-11-13, the operator ran the merged Meloader build (`3aa5aca`, PR #5) wit
 | `3931162` | Created, 40 tags sent | Already fetched |
 | `3931149` | Created, 46 tags sent | Already fetched |
 
-**Result:** Five live imports, queue history reload, and archive skips after restart passed. The queue screenshot shows submitted tag counts and per-item outcomes. Per-image ratings, tag categories, source links, and taxonomy-cache reuse on this build still need direct verification.
+**PASSED.** Five live imports, queue history reload, and archive skips after restart passed. In Mebooru, the operator spot-checked Derpibooru posts `3931184` and `3931173` (image IDs `8` and `9` in `Audit_A`). Both detail pages show `rating:general`, artist, character, species, meta and general tags, and Derpibooru attribution. The original source links point to X and DeviantArt, respectively. The operator confirmed the source-link checks.
+
+After restart, tracing Derpibooru post `3796956` previewed **19 tags**, showed `safe` mapping to `rating:general`, and populated the `Audit_A` resolution column. The operator confirmed all 19 rows. Meloader logged successful taxonomy enrichment and no taxonomy HTTP request for that trace, confirming cache reuse after restart.
 
 ## Remaining acceptance gates
 
@@ -319,6 +321,6 @@ On 2026-11-13, the operator ran the merged Meloader build (`3aa5aca`, PR #5) wit
 - [x] Malformed-rating test against the running local Audit_A server passed: one rejected item, one upload attempt and one SHA-256-verified control
 - [x] Bounded live Derpibooru cold/warm taxonomy measurement passed: 20 posts, identical tags across all passes and zero warm taxonomy HTTP attempts
 - [x] Post-merge Derpibooru smoke test passed for five live imports, queue history reload and archive skips after restart
-- [ ] Verify per-image rating, tag categories and source links on the post-merge batch, and confirm taxonomy-cache reuse on the merged build
+- [x] Post-merge image metadata spot checks and taxonomy-cache reuse passed on the merged build
 - [ ] Live e621 categorized extractor confirmation (deferred for transport reset; do not block all other testing)
 - [ ] Source taxonomy semantic decisions beyond the approved rating-integrity distinction (discuss before changes)
