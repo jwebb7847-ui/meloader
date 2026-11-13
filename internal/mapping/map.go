@@ -732,7 +732,11 @@ func PoolName(meta map[string]any) string {
 // Without a template or an id the post's own link metadata is used, so a bulk job's
 // items link to their own posts rather than the submitted listing.
 func (m *Mapper) PostURL(meta map[string]any) string {
-	if u := fillTemplate(m.profileFor(kwdict.String(meta, "category")).PostURL, meta); u != "" {
+	category := kwdict.String(meta, "category")
+	if category == CategoryDerpibooru {
+		return m.PostURLFor(category, PostID(meta))
+	}
+	if u := fillTemplate(m.profileFor(category).PostURL, meta); u != "" {
 		return u
 	}
 	return permalinkURL(meta)

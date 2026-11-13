@@ -22,42 +22,44 @@ func TestDerpibooruEnrich(t *testing.T) {
 		"safe": {
 			ID:              1,
 			Name:            "safe",
-			Category:        "rating",
+			Category:        tagCategory{value: "rating"},
 			NameInNamespace: "safe",
 		},
 		"rainbow dash": {
 			ID:              2,
 			Name:            "rainbow dash",
-			Category:        "character",
+			Category:        tagCategory{value: "character"},
 			NameInNamespace: "rainbow dash",
 		},
 		"pony": {
 			ID:              3,
 			Name:            "pony",
-			Category:        "species",
+			Category:        tagCategory{value: "species"},
 			NameInNamespace: "pony",
 		},
 		"artist:test": {
 			ID:              4,
 			Name:            "artist:test",
+			Category:        tagCategory{value: "origin"},
 			Namespace:       "artist",
 			NameInNamespace: "test",
 		},
 		"equestria at war mod": {
 			ID:              5,
 			Name:            "equestria at war mod",
-			Category:        "content-fanmade",
+			Category:        tagCategory{value: "content-fanmade"},
 			NameInNamespace: "equestria at war mod",
 		},
 		"wings": {
 			ID:              6,
 			Name:            "wings",
+			Category:        tagCategory{uncategorized: true},
 			NameInNamespace: "wings",
 		},
 		"my little pony": {
 			ID:              7,
 			Name:            "my little pony",
-			Category:        "origin",
+			Category:        tagCategory{value: "origin"},
 			NameInNamespace: "my little pony",
 		},
 	}
@@ -251,7 +253,7 @@ func TestDerpibooruTargetSemantics(t *testing.T) {
 		{
 			name: "artist namespace overrides origin category",
 			rec: tagRecord{
-				Category:        "origin",
+				Category:        tagCategory{value: "origin"},
 				Namespace:       "artist",
 				NameInNamespace: "redruin01",
 			},
@@ -262,7 +264,7 @@ func TestDerpibooruTargetSemantics(t *testing.T) {
 		{
 			name: "named oc namespace is a character",
 			rec: tagRecord{
-				Category:        "oc",
+				Category:        tagCategory{value: "oc"},
 				Namespace:       "oc",
 				NameInNamespace: "anon",
 			},
@@ -273,7 +275,7 @@ func TestDerpibooruTargetSemantics(t *testing.T) {
 		{
 			name: "generic oc tag is metadata",
 			rec: tagRecord{
-				Category:        "oc",
+				Category:        tagCategory{value: "oc"},
 				NameInNamespace: "oc",
 			},
 			source:     "oc",
@@ -283,7 +285,7 @@ func TestDerpibooruTargetSemantics(t *testing.T) {
 		{
 			name: "canonical character category",
 			rec: tagRecord{
-				Category:        "character",
+				Category:        tagCategory{value: "character"},
 				NameInNamespace: "rainbow dash",
 			},
 			source:     "rainbow dash",
@@ -293,7 +295,7 @@ func TestDerpibooruTargetSemantics(t *testing.T) {
 		{
 			name: "species category",
 			rec: tagRecord{
-				Category:        "species",
+				Category:        tagCategory{value: "species"},
 				NameInNamespace: "pegasus",
 			},
 			source:     "pegasus",
@@ -303,7 +305,7 @@ func TestDerpibooruTargetSemantics(t *testing.T) {
 		{
 			name: "origin category is metadata",
 			rec: tagRecord{
-				Category:        "origin",
+				Category:        tagCategory{value: "origin"},
 				NameInNamespace: "screencap",
 			},
 			source:     "screencap",
@@ -313,7 +315,7 @@ func TestDerpibooruTargetSemantics(t *testing.T) {
 		{
 			name: "fanfic namespace retains source spelling",
 			rec: tagRecord{
-				Category:        "content-fanmade",
+				Category:        tagCategory{value: "content-fanmade"},
 				Namespace:       "fanfic",
 				NameInNamespace: "excuses",
 			},
@@ -374,6 +376,8 @@ func TestDerpibooruEnrichSerializesCacheMisses(t *testing.T) {
 				tagSearchResponse{
 					Tags: []tagRecord{
 						{
+							ID:              1,
+							Category:        tagCategory{uncategorized: true},
 							Name:            name,
 							NameInNamespace: name,
 						},
@@ -438,6 +442,8 @@ func TestDerpibooruRetries429(t *testing.T) {
 				tagSearchResponse{
 					Tags: []tagRecord{
 						{
+							ID:              1,
+							Category:        tagCategory{uncategorized: true},
 							Name:            name,
 							NameInNamespace: name,
 						},
@@ -484,13 +490,15 @@ func TestDerpibooruWarmPreloadsWithoutMutation(t *testing.T) {
 
 	records := map[string]tagRecord{
 		"rainbow dash": {
+			ID:              1,
 			Name:            "rainbow dash",
-			Category:        "character",
+			Category:        tagCategory{value: "character"},
 			NameInNamespace: "rainbow dash",
 		},
 		"pony": {
+			ID:              2,
 			Name:            "pony",
-			Category:        "species",
+			Category:        tagCategory{value: "species"},
 			NameInNamespace: "pony",
 		},
 	}
@@ -610,18 +618,22 @@ func TestDerpibooruEnrichBatchesTagIDs(t *testing.T) {
 				tagSearchResponse{
 					Tags: []tagRecord{
 						{
+							ID:              103,
+							Name:            "pony",
+							Category:        tagCategory{value: "species"},
+							NameInNamespace: "pony",
+						},
+						{
+							ID:              101,
 							Name:            "cute",
+							Category:        tagCategory{uncategorized: true},
 							NameInNamespace: "cute",
 						},
 						{
+							ID:              102,
 							Name:            "rainbow dash",
-							Category:        "character",
+							Category:        tagCategory{value: "character"},
 							NameInNamespace: "rainbow dash",
-						},
-						{
-							Name:            "pony",
-							Category:        "species",
-							NameInNamespace: "pony",
 						},
 					},
 				},
@@ -696,13 +708,15 @@ func TestDerpibooruIncompleteBatchFallsBack(t *testing.T) {
 					tagSearchResponse{
 						Tags: []tagRecord{
 							{
+								ID:              102,
 								Name:            "rainbow dash",
-								Category:        "character",
+								Category:        tagCategory{value: "character"},
 								NameInNamespace: "rainbow dash",
 							},
 							{
+								ID:              103,
 								Name:            "pony",
-								Category:        "species",
+								Category:        tagCategory{value: "species"},
 								NameInNamespace: "pony",
 							},
 						},
@@ -714,7 +728,9 @@ func TestDerpibooruIncompleteBatchFallsBack(t *testing.T) {
 					tagSearchResponse{
 						Tags: []tagRecord{
 							{
+								ID:              101,
 								Name:            "cute",
+								Category:        tagCategory{uncategorized: true},
 								NameInNamespace: "cute",
 							},
 						},
@@ -847,6 +863,8 @@ func TestDerpibooruBatchChunksOverFiftyIDs(t *testing.T) {
 				records = append(
 					records,
 					tagRecord{
+						ID:              int64(id),
+						Category:        tagCategory{uncategorized: true},
 						Name:            name,
 						NameInNamespace: name,
 					},
@@ -904,7 +922,7 @@ func TestDerpibooruBatchChunksOverFiftyIDs(t *testing.T) {
 		)
 	}
 
-	if got := len(tagStrings(meta["tags"])); got != 55 {
+	if got := len(meta["tags"].([]string)); got != 55 {
 		t.Fatalf(
 			"final tag count = %d; want 55",
 			got,
@@ -949,15 +967,17 @@ func TestDerpibooruInvalidTagIDShapeFallsBack(t *testing.T) {
 						switch name {
 						case "rainbow dash":
 							rec = tagRecord{
+								ID:              1,
 								Name:            name,
-								Category:        "character",
+								Category:        tagCategory{value: "character"},
 								NameInNamespace: name,
 							}
 
 						case "pony":
 							rec = tagRecord{
+								ID:              2,
 								Name:            name,
-								Category:        "species",
+								Category:        tagCategory{value: "species"},
 								NameInNamespace: name,
 							}
 
@@ -1038,13 +1058,15 @@ func TestDerpibooruCacheSurvivesResolverRestart(t *testing.T) {
 				tagSearchResponse{
 					Tags: []tagRecord{
 						{
+							ID:              101,
 							Name:            "rainbow dash",
-							Category:        "character",
+							Category:        tagCategory{value: "character"},
 							NameInNamespace: "rainbow dash",
 						},
 						{
+							ID:              102,
 							Name:            "pony",
-							Category:        "species",
+							Category:        tagCategory{value: "species"},
 							NameInNamespace: "pony",
 						},
 					},
@@ -1142,8 +1164,9 @@ func TestDerpibooruCorruptCacheIsQuarantinedAndRebuilt(t *testing.T) {
 				tagSearchResponse{
 					Tags: []tagRecord{
 						{
+							ID:              101,
 							Name:            "rainbow dash",
-							Category:        "character",
+							Category:        tagCategory{value: "character"},
 							NameInNamespace: "rainbow dash",
 						},
 					},
@@ -1284,8 +1307,9 @@ func TestDerpibooruCacheWriteFailurePreventsSuccessfulEnrichment(t *testing.T) {
 				tagSearchResponse{
 					Tags: []tagRecord{
 						{
+							ID:              101,
 							Name:            "rainbow dash",
-							Category:        "character",
+							Category:        tagCategory{value: "character"},
 							NameInNamespace: "rainbow dash",
 						},
 					},

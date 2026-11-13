@@ -5,11 +5,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/monbooru/monloader/internal/kwdict"
+	"github.com/monbooru/monloader/internal/mapping"
 	"github.com/monbooru/monloader/internal/monbooru"
 	"github.com/monbooru/monloader/internal/outcome"
 	"github.com/monbooru/monloader/internal/queue"
@@ -180,7 +182,7 @@ func (p *Processor) enrichAllOnline(ctx context.Context, job, snap *queue.Job, m
 		job.SetSite(site)
 		labelEnrichPost(job, meta)
 		url := p.mapper.PostURL(meta)
-		if err := p.enrichTaxonomy(ctx, meta); err != nil {
+		if err := p.prepareSourceMetadata(ctx, meta); err != nil {
 			return nil, url, site, err
 		}
 		if err := p.flattenedErr(meta); err != nil {
@@ -198,6 +200,11 @@ func (p *Processor) enrichAllOnline(ctx context.Context, job, snap *queue.Job, m
 		return res, url, site, nil
 	}
 	job.SetSite(hit.site)
+	link, _ := url.Parse(hit.url)
+	if hit.site == mapping.CategoryDerpibooru || (link != nil &&
+		strings.TrimPrefix(strings.ToLower(link.Hostname()), "www.") == "derpibooru.org") {
+		return nil, "", mapping.CategoryDerpibooru, errDerpibooruPostID
+	}
 	job.UpdateItem(0, func(it *queue.Item) { it.PostID = hit.note + ", source only" })
 	res, err := p.client.EnrichImage(ctx, snap.ImageID, snap.Gallery, monbooru.EnrichPayload{
 		PostFields: monbooru.PostFields{Source: p.mapper.SourceLabel(hit.site), URL: hit.url},
@@ -315,6 +322,9 @@ func (p *Processor) processHashImport(ctx context.Context, job, snap *queue.Job)
 		err = missError(trail)
 	}
 	if err != nil {
+		return abortJob(ctx, job, err)
+	}
+	if err := sourceIdentityErr(meta); err != nil {
 		return abortJob(ctx, job, err)
 	}
 	postURL := p.mapper.PostURL(meta)

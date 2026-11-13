@@ -109,7 +109,7 @@ func TestRatingIntegrityAtImageUploadBoundary(t *testing.T) {
 			name: "philomena safe rating from source tags",
 			meta: map[string]any{
 				"category": "derpibooru",
-				"id":       44,
+				"id":       json.Number("44"),
 				"tags":     []any{"safe"},
 			},
 			wantUpload: true,
@@ -119,7 +119,7 @@ func TestRatingIntegrityAtImageUploadBoundary(t *testing.T) {
 			name: "philomena blank field preserves explicit rating at upload",
 			meta: map[string]any{
 				"category": "derpibooru",
-				"id":       46,
+				"id":       json.Number("46"),
 				"rating":   " \t ",
 				"tags":     []any{"explicit", "sky"},
 			},
@@ -185,7 +185,7 @@ func TestRatingIntegrityAtImageUploadBoundary(t *testing.T) {
 			name: "philomena conflicting rating tags",
 			meta: map[string]any{
 				"category": "derpibooru",
-				"id":       539,
+				"id":       json.Number("539"),
 				"tags":     []any{"safe", "explicit"},
 			},
 			wantReason: "source rating:",

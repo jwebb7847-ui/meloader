@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/monbooru/monloader/internal/config"
@@ -163,8 +164,34 @@ func (m *Mapper) LookupURL(category, md5 string) string {
 	return strings.ReplaceAll(p.MD5Search, "{md5}", md5)
 }
 
+const CategoryDerpibooru = "derpibooru"
+
+// PostID reads the extractor's native ID. Derpibooru identifies each post by
+// a positive top-level integer even when it was found through a listing.
+func PostID(meta map[string]any) string {
+	if kwdict.String(meta, "category") == CategoryDerpibooru {
+		return derpibooruPostID(kwdict.String(meta, "id"))
+	}
+	return kwdict.ID(meta)
+}
+
+func derpibooruPostID(raw string) string {
+	if !allDigits(raw) {
+		return ""
+	}
+	id, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil || id == 0 {
+		return ""
+	}
+	return strconv.FormatUint(id, 10)
+}
+
 func (m *Mapper) PostURLFor(category, id string) string {
 	p, ok := m.view().profiles[category]
+	if category == CategoryDerpibooru {
+		id = derpibooruPostID(id)
+		p, ok = m.BuiltinProfile(category)
+	}
 	if !ok || p.PostURL == "" || id == "" {
 		return ""
 	}
@@ -223,6 +250,19 @@ func normalizeHost(host string) string {
 func (m *Mapper) CanonicalPostURL(rawURL string) (site, canonical string, ok bool) {
 	u, err := url.Parse(rawURL)
 	if err != nil || u.Host == "" {
+		return "", "", false
+	}
+	if normalizeHost(u.Hostname()) == "derpibooru.org" {
+		if u.Scheme != "http" && u.Scheme != "https" {
+			return "", "", false
+		}
+		path := pathSegments(u.Path)
+		if len(path) == 1 || (len(path) == 2 && path[0] == "images") {
+			canonical = m.PostURLFor(CategoryDerpibooru, path[len(path)-1])
+			if canonical != "" {
+				return CategoryDerpibooru, canonical, true
+			}
+		}
 		return "", "", false
 	}
 	category, ok := m.view().hostSite[normalizeHost(u.Host)]
