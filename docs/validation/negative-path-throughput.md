@@ -128,6 +128,31 @@ PY
 
 The post and rating may change over time. **Never** import it merely because the extractor process exited with code zero: `--dump-json` can embed error messages. Do not share raw metadata URLs or API credentials. If access fails, stop after one attempt. A fallback candidate is the Gelbooru-family `safebooru.org` source; start with one metadata-only post and verify rating/category fields before attempting an import.
 
+**Observed local Danbooru preflight (2026-11-13):** routing validation reported `Danbooru destination: Audit_A` and `Routing preflight: PASS`. The gallery-dl 1.32.19 `--dump-json` metadata request for post `294929` returned one `HttpError` record and the script stopped before download/import. The **embedded exception detail has not yet been inspected**; do not call this a rate-limit, site ban, or source-mapping defect without it. There are now two unavailable source checks (e621 had a known connection reset; Danbooru's cause is undetermined) and one successful Derpibooru live check.
+
+Read the saved metadata result **without another network request**:
+
+```sh
+python3 - <<'PY'
+import json
+import os
+import re
+from pathlib import Path
+
+out = Path(os.environ.get("TMPDIR", "/tmp")) / "danbooru-rating-check.json"
+messages = json.loads(out.read_text())
+for msg in messages:
+    if isinstance(msg, list) and msg and msg[0] == -1 and isinstance(msg[-1], dict):
+        error = msg[-1]
+        detail = str(error.get("message", ""))
+        detail = re.sub(r'https?://[^\\s\\\"\\\']+', '[URL REDACTED]', detail)
+        print("Extractor error class:", error.get("error", "unknown"))
+        print("Redacted detail:", detail[:350] or "(none)")
+PY
+```
+
+If the detail also shows a connection reset, classify both unavailable source tests as **network-transport blocked** without claiming an origin. The third candidate is gallery-dl's pinned Safebooru/Gelbooru-v02 fixture `https://safebooru.org/index.php?page=post&s=view&id=1169132`. A single metadata-only probe using the isolated gallery-dl (with `-o extractor.safebooru.tags=true` to request category tags) may establish an alternative independent family. Verify its native rating and categories, and check the `safebooru` per-site override routes to `Audit_A` **before** importing. Do not assume the pinned example post is still available, or that an API success supplies all categories. Do not retry blocked sources repeatedly.
+
 **Routing guard:** before any Danbooru import, check that Meloader's `[monbooru].default_gallery` plus any `[[sites]]` override for `danbooru` resolves to **Audit_A**, not `home` or `Audit_B`. The existing successful Derpibooru override check does *not* prove Danbooru's routing.
 
 Once metadata and routing both pass, import **only this one post** through Meloader using `up to 1`. Confirm `1 created` or a clearly distinguished duplicate; inspect the individual Mebooru image detail for `rating:sensitive`, categorized tags and source provenance. Do not turn a failed source into a generic/unrated import.
