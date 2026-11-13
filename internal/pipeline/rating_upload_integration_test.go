@@ -85,6 +85,22 @@ func TestRatingIntegrityAtImageUploadBoundary(t *testing.T) {
 			wantTags:   []string{"rating:general"},
 		},
 		{
+			name: "safebooru real extractor shape with categorized string fields",
+			meta: map[string]any{
+				"category":       "safebooru",
+				"id":             1169132,
+				"rating":         "s",
+				"tags":           "creator_one alpha beta sample_series starry_sky quiet tagme",
+				"tags_artist":    "creator_one",
+				"tags_character": "alpha beta",
+				"tags_copyright": "sample_series",
+				"tags_general":   "starry_sky quiet",
+				"tags_metadata":  "tagme",
+			},
+			wantUpload: true,
+			wantTags:   []string{"artist:creator_one", "character:alpha", "character:beta", "copyright:sample_series", "meta:tagme", "quiet", "rating:general", "starry_sky"},
+		},
+		{
 			name: "generic source genuinely unrated",
 			meta: map[string]any{
 				"category": "example-photography",
