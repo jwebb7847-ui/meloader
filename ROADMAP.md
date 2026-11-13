@@ -51,7 +51,7 @@ Recover authoritative categories when gallery-dl emits flattened tags. Use the s
 
 ### 4. Further booru coverage — next
 
-[PR #6](https://github.com/jwebb7847-ui/meloader/pull/6) shipped the approved trust and fallback fixes for malformed taxonomy, tag ID verification, and canonical post provenance. The Mac audit confirmed a live import and cache reuse after restart. Remaining decisions cover verified aliases, unusual namespaces, named original characters, and when to evaluate category-qualified blacklist rules. Discuss filing and rule behavior before implementation. Use targeted fixtures or metadata-only probes, and check request counts and cache behavior for regressions.
+[PR #6](https://github.com/jwebb7847-ui/meloader/pull/6) shipped the approved trust and fallback fixes for malformed taxonomy, tag ID verification, and canonical post provenance. The Mac audit confirmed a live import and cache reuse after restart. Remaining decisions cover verified aliases, unusual namespaces, named original characters, and [pre-download blacklist timing](docs/validation/blacklist-timing.md). Discuss filing and rule behavior before implementation. Use targeted fixtures or metadata-only probes, and check request counts and cache behavior for regressions.
 
 ### 5. Meloader / Mebooru user integration
 
@@ -84,6 +84,8 @@ Follow the [local audit runbook](docs/validation/local-audit.md) for checkout, c
 
 ## Known open decisions
 
-- Whether future source capabilities need an explicit per-field representation of resolved, absent and invalid data.
-- Decide category fidelity for other mappings and how much raw source metadata to retain for future audits.
-- Where to draw the contract boundary between `internal/taxonomy` and a future more general source-adapter package.
+The [approved architecture defaults](docs/architecture/source-semantics-proposal.md#product-decisions) cover source field outcomes, provenance retention, taxonomy and vocabulary ownership, and the adapter package boundary.
+
+- Settle the [blacklist timing policy](docs/validation/blacklist-timing.md), including how selected rules apply when verification is incomplete.
+- Decide individual filing rules for aliases, original characters, and unusual namespaces from targeted source evidence.
+- Define richer diagnostic fields and retention when a concrete audit or replay use case requires them.

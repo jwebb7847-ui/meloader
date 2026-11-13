@@ -1,6 +1,6 @@
 # Item 3B — Source semantics contract (proposal)
 
-**Status (2026-11-13).** The approved Item 3 behavior shipped in [PR #5](https://github.com/jwebb7847-ui/meloader/pull/5) on `main`. The approved scope covers rating integrity, source authority with user-controlled filing, and visible refusal when required taxonomy is unavailable or invalid. The [e621 filing decision](../validation/e621.md#live-lore-and-contributor-traces--2026-11-13) retains the current mapper rules. [Live Danbooru acceptance](../validation/negative-path-throughput.md#8-live-danbooru-acceptance) verified native `s` → `rating:sensitive` and categorized tags in `Audit_A`. Category fidelity for other mappings and raw metadata retention remain open.
+**Status (2026-11-13).** The approved Item 3 behavior shipped in [PR #5](https://github.com/jwebb7847-ui/meloader/pull/5) on `main`. The approved scope covers rating integrity, source authority with user-controlled filing, and visible refusal when required taxonomy is unavailable or invalid. The [e621 filing decision](../validation/e621.md#live-lore-and-contributor-traces--2026-11-13) retains the current mapper rules. [Live Danbooru acceptance](../validation/negative-path-throughput.md#8-live-danbooru-acceptance) verified native `s` → `rating:sensitive` and categorized tags in `Audit_A`. The architecture defaults below are approved. Individual source mappings and the scope of any future diagnostic retention remain open.
 
 **Original proposal reviewed against:** Meloader `meloader-item3-e621-validation` at `67685c8`, including `internal/taxonomy/registry.go`, `internal/taxonomy/derpibooru.go`, `internal/mapping/map.go`, and `internal/pipeline/processor.go`; source-side expectations validated with pinned gallery-dl v1.32.19. See [ROADMAP.md](../../ROADMAP.md).
 
@@ -26,7 +26,7 @@ This is a **conceptual separation**, not a proposal to reorder existing producti
 
 A source adapter should report only fields it is qualified to interpret. An adapter with no claim for `rating` must not cause a new rating conversion or network lookup.
 
-The useful **conceptual** outcomes for each claimed field are:
+The approved meanings for source field outcomes are:
 
 | Outcome | Meaning | Proposed treatment |
 | --- | --- | --- |
@@ -36,7 +36,7 @@ The useful **conceptual** outcomes for each claimed field are:
 | Invalid / conflicting | An expected field is malformed, contradictory, or fails integrity checks | Surface a diagnostic; **do not** silently turn categorized tags into general tags or invent a safe rating |
 | Temporary lookup failure | The adapter cannot yet verify a field it requires (network timeout, throttle, etc.) | Keep existing explicit error/retry behavior for required authoritative enrichment; do not silently downgrade |
 
-These are **design concepts**, not a mandate to construct a per-field heap object or an enormous universal schema for every post. Implement as narrowly as the measured requirements justify. Diagnostic details should identify the *source* and *field*, not leak credentials.
+Introduce a typed result only where a caller needs to act on these distinctions. The generic path can continue using its existing representations. Diagnostic details identify the source and field and omit credentials.
 
 ## Concrete contrasting cases
 
@@ -95,7 +95,11 @@ Today, a malformed or unknown rating can map to the empty string; the code comme
 2. **Invalid or unavailable required taxonomy — APPROVED.** When an extractor expected to categorize tags supplies flat tags without usable category data, the item fails visibly with `mapping_failed`. Empty, unreadable and bookmark-only fields cannot satisfy this check. If the required Derpibooru lookup fails, the item fails before sending image or tag data. This applies to downloads, metadata refresh, online lookup, replacement and bundle pages. Generic flat-tag imports still use the existing mapper.
 3. **Invalid required rating — APPROVED 2026-11-13:** A source from a known rating-bearing booru family with missing, malformed, or conflicting rating evidence must fail visibly before its metadata/file is automatically pushed. A genuinely unrated generic source may remain unrated. This is approved separately from any Mebooru default filter or future local AI classification workflow. Implementation is in `meloader-item3-rating-integrity`; [Go race tests and vet passed](https://github.com/jwebb7847-ui/meloader/actions/runs/43344451398), with live positive and malformed-rating checks completed against local Mebooru for reachable sources. No change to the Mebooru contract.
 4. **e621 category fidelity — APPROVED:** keep `lore → meta` and `contributor → artist`. The library does not need a separate lore filter, and Artist includes creative contributors. Category fidelity for other mappings remains open.
-5. **Raw metadata retention:** retain enough raw evidence for debugging versus persist full upstream payloads. **Defer** until storage/privacy/operational costs are defined.
+5. **Source evidence retention — APPROVED.** Mebooru retains durable provenance through the existing import contract, including source identity, post ID, canonical URL, original attribution, and tag origins. Keep richer diagnostics selective and local to Meloader. Define the fields and retention period for a specific audit or replay use case before persisting them. Full upstream payload archival stays deferred.
 6. **Derpibooru source integrity — APPROVED for Item 4.** Require a well-formed native tag list and verified tag records. An explicit null category represents an uncategorized tag. Refresh older cache entries that omitted this evidence. Match usable tag IDs to their listed names and keep exact-name lookup for tags whose ID evidence is absent or unusable. Refuse contradictory evidence with `mapping_failed`. Automatic post writes require the extractor's positive native post ID and use its canonical Derpibooru URL. Original attribution travels separately.
 
-Once these decisions are made, implement the narrowest possible interface and test only genuine gaps. An adapter abstraction is successful when most sources need **no adapter at all**.
+7. **Source field outcomes — APPROVED.** Use the meanings in [Source claims](#source-claims-sparse-not-heavyweight), with typed results added where a consumer needs them. Keep genuine absence, invalid evidence, and temporary verification failures distinct. Verified uncategorized tags can follow normal General filing.
+8. **Taxonomy and vocabulary ownership — APPROVED.** Meloader interprets source taxonomy and applies approved filing rules. Mebooru owns cross-source search, synonyms, and local organization. Validate individual filing decisions against source evidence.
+9. **Adapter package boundary — APPROVED.** Keep the registry in `internal/taxonomy`. Revisit the boundary when a concrete additional source capability needs a shared contract. Queueing, media transfer, blacklist policy, and Mebooru writes stay in the generic acquisition pipeline.
+
+[Blacklist timing](../validation/blacklist-timing.md) is under review. The user controls the content rules, and the current review focuses on stopping media transfer when a selected rule matches or its required evidence cannot be verified.
