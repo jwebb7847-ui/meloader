@@ -259,6 +259,8 @@ MELOADER_LIVE_RATING_AUDIT_CONFIG="$HOME/Library/Application Support/Monloader A
 
 A passing run leaves one synthetic control image in `Audit_A` and reports its image ID. The test removes its local scratch PNGs and reads the audit config without saving changes.
 
+**Local audit result (2026-11-13) — PASSED.** The operator ran `TestRatingIntegrityAgainstLocalAuditGallery` with `-race` from detached Meloader revision `ed6477fe9d2c45635a6515a7458b98568434d440` on macOS, against the running Mebooru audit server. The malformed Safebooru item failed with `mapping_failed: source rating: safebooru returned an unrecognized rating "not-a-rating"`. The proxy counted exactly **one** upload attempt, the valid control, and a read-back from `Audit_A` matched the generated control's SHA-256 (image ID `7` in this run). The test also passed its scratch-cleanup assertions. The reported `0.02 s` test duration is for the local synthetic check.
+
 ## Remaining acceptance gates
 
 - [x] Positive Derpibooru source -> Mebooru Audit_A -> per-image metadata, tags and original source persisted
@@ -271,6 +273,6 @@ A passing run leaves one synthetic control image in `Audit_A` and reports its im
 - [x] One live alternate-family Safebooru/Gelbooru-v02 post imported to Audit_A with `rating:general`, all 10 categorized per-image tags and source provenance (Mebooru ID 8); Danbooru-specific live rating `s -> sensitive` remains unverified due to transport reset
 - [x] Five-post Safebooru acquisition and spot-checked metadata persistence accepted: all 5 created, ~12 s wall-time, 207 tags submitted, exact `...` validator warning intentionally rejected; Audit_A image IDs 9 and 11 confirm rating/category/source preservation
 - [x] Bounded 20-position workload and full 20-new-image continuation accepted and timed; source metadata spot-checked in the first window
-- [ ] Run the opt-in malformed-rating test against the local Audit_A server
+- [x] Malformed-rating test against the running local Audit_A server passed: one rejected item, one upload attempt and one SHA-256-verified control
 - [ ] Live e621 categorized extractor confirmation (deferred for transport reset; do not block all other testing)
 - [ ] Source taxonomy semantic decisions beyond the approved rating-integrity distinction (discuss before changes)

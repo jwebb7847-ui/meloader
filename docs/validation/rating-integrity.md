@@ -1,6 +1,6 @@
 # Source rating integrity — acceptance plan and results
 
-**Status (2026-11-13):** The real pipeline-to-HTTP boundary tests and full Go race tests + vet passed at commit `16d490887d17d3a4de4966182bdec2b33c28852f` on [GitHub CI run 43346314936](https://github.com/jwebb7847-ui/meloader/actions/runs/43346314936). Source-to-running-Mebooru acceptance is **not yet completed**.
+**Status (2026-11-13):** The real pipeline-to-HTTP boundary tests and full Go race tests + vet passed at commit `16d490887d17d3a4de4966182bdec2b33c28852f` on [GitHub CI run 43346314936](https://github.com/jwebb7847-ui/meloader/actions/runs/43346314936). Positive imports from Derpibooru and Safebooru and the local malformed Safebooru rating check against running Mebooru have passed. Live e621 and Danbooru validation remains transport-blocked.
 
 ## Approved policy
 
@@ -199,7 +199,11 @@ Stop it with Ctrl+C. Do not use an older compiled binary or kill an unknown proc
 
 **Global connection warning (separate issue):** The operator reports `monloader auth rejected` appears on pre-existing images too, confirming it is the shared reverse link status, **not an image-specific error**. In Mebooru's `internal/monloader/link.go`, the status probe is a bearer-token read of `GET /api/v1/queue?limit=1` against Meloader; `ConnRejected` is set for 401, 403, 503 or `setup_required`. The token comes from Mebooru's `[monloader].api_token` per `internal/web/router.go`. **Root cause isolated with a credential-safe read-only localhost probe:** Mebooru `[monloader].api_url` was `http://127.0.0.1:8455` (self) rather than Meloader `http://127.0.0.1:8456`. The token in `[monloader].api_token` received **HTTP 200** from `http://127.0.0.1:8456/api/v1/queue?limit=1`. Mebooru `internal/monloader/link.go` chooses configured `APIURL` over paired `PeerURL`; the erroneous 8455 overrides the correct pairing target. **Repair operator-confirmed (2026-11-13):** Set `[monloader].api_url` to `http://127.0.0.1:8456`, preserved token/pairing/gallery configuration and restarted Mebooru. Screenshot of Mebooru footer shows a green status indicator and `connected to monloader dev`. No re-pair, token rotation, gallery modification or code change was required.
 
-**Result:** **positive live acquisition, rating integrity translation, all 19 image-specific categorized tags, source provenance, physical image persistence and real Mebooru HTTP import all passed.** This does **not** close the e621 live extractor gate, negative corrupted-rating live-import gate or throughput acceptance. The reverse Mebooru -> Meloader authentication is a distinct pending defect and did not block the positive upload.
+**Result:** **positive live acquisition, rating integrity translation, all 19 image-specific categorized tags, source provenance, physical image persistence and real Mebooru HTTP import all passed.** The reverse Mebooru -> Meloader link was repaired during this audit. Subsequent Safebooru checks covered bounded throughput and a malformed-rating refusal against the running audit server. Live e621 extraction remains pending.
+
+## Local malformed-rating acceptance (2026-11-13)
+
+**Local audit result (2026-11-13) — PASSED.** The operator ran `TestRatingIntegrityAgainstLocalAuditGallery` with `-race` from detached Meloader revision `ed6477fe9d2c45635a6515a7458b98568434d440` on macOS, against the running Mebooru audit server. The malformed Safebooru item failed with `mapping_failed: source rating: safebooru returned an unrecognized rating "not-a-rating"`. The proxy counted exactly **one** upload attempt, the valid control, and a read-back from `Audit_A` matched the generated control's SHA-256 (image ID `7` in this run). The test also passed its scratch-cleanup assertions. The reported `0.02 s` test duration is for the local synthetic check. [Procedure and workload results](negative-path-throughput.md#5-malformed-source-rating-against-the-running-audit-gallery).
 
 ## Remaining gates
 
@@ -212,7 +216,7 @@ Stop it with Ctrl+C. Do not use an older compiled binary or kill an unknown proc
 - [x] Diagnose global Mebooru footer `monloader auth rejected`: reverse-link `api_url` incorrectly targeted Mebooru on 8455; the existing bearer token returned HTTP 200 against real Meloader on 8456
 - [x] Operator confirmed Mebooru `connected to monloader dev` after correcting `[monloader].api_url` to 8456 and restarting; existing bearer token accepted and no re-pair was necessary
 - [ ] Live **e621** categorized metadata extraction; pinned gallery-dl 1.32.19 encountered a peer connection reset, not a source-mapping failure
-- [ ] Run the opt-in [malformed-rating test against local Audit_A](negative-path-throughput.md#5-malformed-source-rating-against-the-running-audit-gallery); invalid/missing known-booru ratings have already passed real-pipeline-to-mock-HTTP no-upload tests
+- [x] Opt-in malformed Safebooru rating test passed against local `Audit_A`: `mapping_failed`, one upload attempt for the valid control, and SHA-256 verified by read-back
 - [ ] Review e621 `lore` and `contributor` mapping **separately**; do not conflate with rating integrity
 - [x] Bounded Safebooru end-to-end acquisition: five new images in ~12 s and 20 new images in ~35 s; see the [staged workload results](negative-path-throughput.md#bounded-20-post-safebooru-run-and-continuation--passed)
 - [ ] Compare larger workloads that exercise source taxonomy cache behavior
