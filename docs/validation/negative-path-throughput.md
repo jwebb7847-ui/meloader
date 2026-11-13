@@ -207,6 +207,23 @@ Operator stopwatch estimate: **~12 seconds click-to-finish** (about **10–11 se
 
 **Next gate:** hover `1 tag warning` or the adjacent truncated text in Meloader UI to obtain the exact warning (the `[debug]` button **re-runs an extractor** and is not needed); inspect image-specific persisted tags/rating in Mebooru for `7303986` and at least one clean companion item. If the warning is the deliberate rejection of `...` and other metadata checks pass, advance to a **bounded 20-post** real workflow as a separate test.
 
+### Five-post metadata acceptance follow-up — PASSED
+
+Operator provided the **full tooltip** from Safebooru post `7303986`:
+
+> `tag ...: invalid tag name: name must contain at least one letter, digit, or emoticon character`
+
+This exactly matches Mebooru's existing `tags.ValidateTagName` rule: a decoration-only string `...` cannot become a valid tag, while meaningful emoticons can. The warning is **visible, actionable and specific**; do not silently coerce or accept the rejected value. The `52 tags sent` value is a submitted count and does **not** mean all 52 persisted; that single rejected tag is a known exception.
+
+Two **image-specific** Mebooru Audit_A detail screenshots confirm the rest of the pipeline's core integrity:
+
+- **Image ID 9**, from the new Safebooru batch: PNG **2048×2048**, **3.1 MiB**, `Added via monloader`; Safebooru source and independent original URL preserved. Rating `general`. Character `nikki_(nikki)`, copyright `nikki_(series)`, meta entries including `highres`, and general descriptive tags shown. Notably general emoticon `:3` persisted, but rejected `...` is absent. Screenshot is vertically scrolled, so not every tag can be counted from this view.
+- **Image ID 11**, source post `7303984`: PNG **1920×1080**, **3.5 MiB**, `Added via monloader`; Safebooru and original source preserved. Rating `general`; character `neuvillette_(genshin_impact)`, copyright `genshin_impact`, meta `official_art` and `highres`, with correctly grouped general tags such as `fountain`, `night` and `rain`.
+
+**Acceptance decision:** the five-image *acquisition and spot-checked metadata persistence* gate is **PASSED with one intentional tag rejection**. The source faithfully exposed the questionable raw tag, Meloader did not suppress its rejection, and Mebooru maintained its existing validation policy. This is **not** a zero-warning run, nor exhaustive independent comparison of all 207 submitted tags.
+
+The next scale test should keep the `Audit_A` routing, avoid an unbounded `Get all`, and distinguish skipped archive positions from newly downloaded/created images. A new listing job with `up to 20` on the **same URL** includes previously processed first-five positions, so expect the archive to skip those positions; the job then tests **up to 20 listing positions**, not 20 guaranteed new downloads. Alternatively the existing series' `Get next 5` advances disjoint windows but is not a single 20-item job. Do not conflate the two throughput measurements.
+
 ## 4. Staged live workload, not a bulk leap
 
 After the one-post cross-family import works:
@@ -226,7 +243,7 @@ For every run, record the source URL/query, gallery, two running server commit S
 - [x] Metadata-only source contrast: Derpibooru original and retest consistent, Safebooru post 1169132 confirmed as a single post with native `s` and five categorized tag fields; e621/Danbooru remain reset-blocked
 - [x] Safebooru image HEAD preflight passed with verified curl TLS, `image/jpeg`, `247882` bytes (0.24 MiB); Python 3.12's own default CA-file lookup was unresolved and its urllib HEAD failed certificate verification
 - [x] One live alternate-family Safebooru/Gelbooru-v02 post imported to Audit_A with `rating:general`, all 10 categorized per-image tags and source provenance (Mebooru ID 8); Danbooru-specific live rating `s -> sensitive` remains unverified due to transport reset
-- [x] Five-post Safebooru acquisition to Audit_A: all 5 created, ~12 s wall-time, 207 tags submitted and 1 source-tag warning; **per-image metadata verification and exact warning still pending**
+- [x] Five-post Safebooru acquisition and spot-checked metadata persistence accepted: all 5 created, ~12 s wall-time, 207 tags submitted, exact `...` validator warning intentionally rejected; Audit_A image IDs 9 and 11 confirm rating/category/source preservation
 - [ ] Bounded 20-post live workload accepted, measured and checked for source metadata fidelity
 - [ ] Live e621 categorized extractor confirmation (deferred for transport reset; do not block all other testing)
 - [ ] Source taxonomy semantic decisions beyond the approved rating-integrity distinction (discuss before changes)
