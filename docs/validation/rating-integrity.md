@@ -149,6 +149,18 @@ PY
 
 Do not share unredacted raw JSON or a configuration file. If the detail names a connection/proxy/SSL/DNS/timeout problem, classify the live check as **environment blocked** while keeping the already-passed local mapping and upload-boundary tests intact. If the detail includes an HTTP status, investigate site access or post availability separately. Do not repeatedly probe a blocked host.
 
+### Observed root-cause category — network transport reset
+
+The redacted exception from the existing 1.32.19 metadata attempt was:
+
+```text
+ConnectionError: ('Connection aborted.', ConnectionResetError(54, 'Connection reset by peer'))
+```
+
+It indicates the HTTP client did **not** receive a usable e621 HTTP response. We cannot attribute the reset to the site, intermediary or client path from this exception alone. The live e621 extraction gate is **environment-blocked / incomplete**, not a failed source-category or rating-compatibility test. **Do not keep retrying** or report an invented HTTP 403/429. Pinned upstream 1.32.19 extractor source and fixtures show the expected categorized `tags_<category>` output when a post can be fetched; our local mapper tests and mock HTTP push tests remain green.
+
+For a separate, controlled future test, either retry once from an independently working network or choose another reachable rated/unrated source for the end-to-end pipeline. The first priority is to establish the existing audit configuration and the active Mebooru instance without changing library state. The isolated validation venv's binary can be selected at runtime with `MONLOADER_GALLERYDL_BINARY_PATH` for a `go run` test without editing `monloader.toml`; verify the config and target data/gallery first.
+
 ## Running the application from the checked-out source
 
 Only when the dedicated audit configuration is present and the usual port is free:
