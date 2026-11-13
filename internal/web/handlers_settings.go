@@ -496,6 +496,14 @@ func (s *Server) tracePost(w http.ResponseWriter, r *http.Request) {
 		s.render(w, "tag_trace", map[string]any{"Failure": traceFailure{kind, msg, res.Detail}})
 		return
 	}
+	if s.taxonomy != nil {
+		if err := s.taxonomy.Enrich(ctx, meta); err != nil {
+			s.render(w, "tag_trace", map[string]any{"Failure": traceFailure{
+				Kind: "err", Msg: "Sending fails: source taxonomy", Detail: err.Error(),
+			}})
+			return
+		}
+	}
 	s.customCategories(r)
 	trace := s.mapper.Trace(meta)
 	if kwdict.String(meta, "category") == mapping.CategoryDirectlink || kwdict.String(meta, "subcategory") == "post" {

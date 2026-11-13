@@ -180,7 +180,13 @@ func (p *Processor) enrichAllOnline(ctx context.Context, job, snap *queue.Job, m
 		job.SetSite(site)
 		labelEnrichPost(job, meta)
 		url := p.mapper.PostURL(meta)
+		if err := p.enrichTaxonomy(ctx, meta); err != nil {
+			return nil, url, site, err
+		}
 		if err := p.flattenedErr(meta); err != nil {
+			return nil, url, site, err
+		}
+		if err := p.ratingErr(meta); err != nil {
 			return nil, url, site, err
 		}
 		payload, warnings := p.mapEnrichPayload(meta, url, claimedMD5(meta, snap.MD5, sim), sim)

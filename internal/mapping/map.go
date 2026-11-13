@@ -361,7 +361,7 @@ func (m *Mapper) Map(meta map[string]any) PushFields {
 	var tags []string
 	drop := m.cfg.Current().Tags.DropCategories
 	var withheld []string
-	add := func(_, s string) {
+	add := func(_, _, s string) {
 		listed := normalizeTag(s)
 		s = applyTagRule(profile.TagRules, listed)
 		if s == "" && listed != "" {
@@ -371,7 +371,7 @@ func (m *Mapper) Map(meta map[string]any) PushFields {
 			tags = append(tags, s)
 		}
 	}
-	dropped := func(_, s string) { withheld = append(withheld, normalizeTag(s)) }
+	dropped := func(_, _, s string) { withheld = append(withheld, normalizeTag(s)) }
 
 	m.eachTag(category, profile, meta, add, dropped)
 
@@ -404,14 +404,13 @@ func (m *Mapper) Map(meta map[string]any) PushFields {
 	return pf
 }
 
-// eachTag hands over every listed tag with its field, as category:name where the
-// category is known and before any tag rule. dropped gets the tags of a category
-// the site's map drops, under the category they would land in.
-func (m *Mapper) eachTag(category string, profile Profile, meta map[string]any, visit, dropped func(field, tag string)) {
-	named := func(next func(field, tag string)) func(field, tag string) {
-		return func(field, tag string) {
+// eachTag keeps the source field and spelling alongside the mapped category
+// before tag rules run. dropped receives the tag's default category.
+func (m *Mapper) eachTag(category string, profile Profile, meta map[string]any, visit, dropped func(field, listed, tag string)) {
+	named := func(next func(field, listed, tag string)) func(field, listed, tag string) {
+		return func(field, listed, tag string) {
 			if normalizeTag(tag) != "" {
-				next(field, tag)
+				next(field, listed, tag)
 			}
 		}
 	}
@@ -428,20 +427,21 @@ func (m *Mapper) eachTag(category string, profile Profile, meta map[string]any, 
 		if !keep {
 			if base, ok := baseCategory(suffix); ok {
 				for _, name := range parseTagField(meta["tags_"+suffix]) {
-					dropped("tags_"+suffix, formatTag(base, name))
+					dropped("tags_"+suffix, name, formatTag(base, name))
 				}
 			}
 			continue
 		}
 		for _, name := range parseTagField(meta["tags_"+suffix]) {
-			visit("tags_"+suffix, formatTag(cat, name))
+			visit("tags_"+suffix, name, formatTag(cat, name))
 		}
 	}
 	if flat {
 		// A flat tag list lands as general, except entries with a recognized
 		// namespace prefix (zerochan's "Character:name", philomena boorus).
+		philomena := m.sourceRatingProfile(category, profile).Family == FamilyPhilomena
 		for _, name := range parseTagField(flatTags(meta)) {
-			if profile.Family == FamilyPhilomena && philomenaRatingTag(name) {
+			if philomena && philomenaRatingTag(name) {
 				continue // lifted to the rating field below, not a content tag
 			}
 			key, base, sub := "general", "general", name
@@ -452,48 +452,52 @@ func (m *Mapper) eachTag(category string, profile Profile, meta map[string]any, 
 			} else if _, row := m.categoryOverride(category, profile, ns); row && rest != "" {
 				key, sub = ns, rest
 			}
-			m.fileTag(category, profile, "tags", key, base, sub, visit, dropped)
+			m.fileTag(category, profile, "tags", name, key, base, sub, visit, dropped)
 		}
 	}
 
 	if profile.Kind == KindManga {
 		for _, f := range mangaTagFields {
 			for _, name := range parseNameField(meta[f.field]) {
-				m.fileTag(category, profile, f.field, f.field, f.category, name, visit, dropped)
+				m.fileTag(category, profile, f.field, name, f.field, f.category, name, visit, dropped)
 			}
 		}
 	}
 }
 
-func (m *Mapper) fileTag(site string, profile Profile, field, key, base, name string, visit, dropped func(field, tag string)) {
+func (m *Mapper) fileTag(site string, profile Profile, field, listed, key, base, name string, visit, dropped func(field, listed, tag string)) {
 	to, ok := m.categoryOverride(site, profile, key)
 	switch {
 	case !ok:
-		visit(field, formatTag(base, name))
+		visit(field, listed, formatTag(base, name))
 	case to == "":
-		dropped(field, formatTag(base, name))
+		dropped(field, listed, formatTag(base, name))
 	default:
-		visit(field, formatTag(to, name))
+		visit(field, listed, formatTag(to, name))
 	}
 }
 
 func (m *Mapper) postRating(category string, profile Profile, meta map[string]any) string {
-	return m.ratingFor(category, profile, listedRating(profile, meta))
+	return m.ratingFor(category, profile, m.listedRating(category, profile, meta))
 }
 
-func listedRating(profile Profile, meta map[string]any) string {
-	// Philomena boorus carry no rating field; the rating is a tag.
-	raw := kwdict.String(meta, "rating")
-	if raw == "" && profile.Family == FamilyPhilomena {
-		raw = philomenaRating(meta)
+func (m *Mapper) listedRating(site string, profile Profile, meta map[string]any) string {
+	raw := sourceRatingField(meta)
+	if raw != "" {
+		return raw
 	}
-	if raw == "" {
-		// civitai's numeric nsfwLevel means nothing until a profile's
-		// rating overrides name each level.
-		file, _ := meta["file"].(map[string]any)
-		raw = kwdict.String(file, "nsfwLevel")
+	// Philomena normally carries the rating as a tag. Rated booru families
+	// use their own rating evidence and defaults.
+	source := m.sourceRatingProfile(site, profile)
+	if source.Family == FamilyPhilomena {
+		return philomenaRating(meta)
 	}
-	return raw
+	if requiresSourceRating(source.Family) {
+		return ""
+	}
+	// Civitai's numeric nsfwLevel is interpreted by profile overrides.
+	file, _ := meta["file"].(map[string]any)
+	return strings.TrimSpace(kwdict.String(file, "nsfwLevel"))
 }
 
 func categoryDropped(drop []string, tag string) bool { return droppedCategory(drop, tag) != "" }
@@ -779,30 +783,44 @@ func (m *Mapper) ActiveOverrides(site string) (tags []config.TagOverride, rating
 }
 
 func (m *Mapper) ratingFor(site string, profile Profile, raw string) string {
+	raw = strings.TrimSpace(raw)
 	for _, o := range m.cfg.Current().RatingOverrides {
-		if o.Site == site && strings.EqualFold(o.From, strings.TrimSpace(raw)) && validRatings[o.To] {
+		if o.Site == site && strings.EqualFold(o.From, raw) && validRatings[o.To] {
 			return o.To
 		}
 	}
-	for from, to := range profile.RatingOverrides {
-		if strings.EqualFold(from, strings.TrimSpace(raw)) {
-			return to
-		}
+	if rating := ratingOverride(profile.RatingOverrides, raw); rating != "" {
+		return rating
 	}
-	if r := mapRating(profile.Family, raw); r != "" {
-		return r
+	source := m.sourceRatingProfile(site, profile)
+	if rating := sourceRating(source, raw); rating != "" {
+		return rating
 	}
-	return profile.DefaultRating
+	return cmp.Or(profile.DefaultRating, source.DefaultRating)
 }
 
-const FlattenedTagsMsg = "the post came with no per-category tags - the site's page or gallery-dl's tag fields may have changed, so nothing was sent"
+const FlattenedTagsMsg = "the post came with no usable per-category tags - the site's page or gallery-dl's tag fields may have changed, so nothing was sent"
 
-// SuspectFlattenedTags flags a categorizing site's post with tags but no
-// tags_<x> fields: the fingerprint of a gallery-dl bump or a post page with no
-// tag list, which would flatten every tag into general.
+// SuspectFlattenedTags checks source fields before applying user tag rules.
+// Optional tags, such as bookmark tags, do not categorize the post itself.
 func (m *Mapper) SuspectFlattenedTags(meta map[string]any) bool {
 	p := m.profileFor(kwdict.String(meta, "category"))
 	categorized := p.Family == FamilyDanbooru || p.Family == FamilyE621 ||
 		needsTagsFamily(p.Family) || p.NeedsTags
-	return categorized && len(tagSuffixes(meta)) == 0 && len(parseTagField(flatTags(meta))) > 0
+	if !categorized {
+		return false
+	}
+
+	for field, value := range meta {
+		suffix, ok := strings.CutPrefix(field, "tags_")
+		if ok && suffix != "" && !extraTagSuffixes[suffix] &&
+			slices.ContainsFunc(parseTagField(value), hasTagText) {
+			return false
+		}
+	}
+	return slices.ContainsFunc(parseTagField(flatTags(meta)), hasTagText)
+}
+
+func hasTagText(tag string) bool {
+	return strings.TrimSpace(tag) != ""
 }

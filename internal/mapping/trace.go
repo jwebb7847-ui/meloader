@@ -47,7 +47,7 @@ func (m *Mapper) Trace(meta map[string]any) PostTrace {
 	profile := m.profileFor(category)
 	drop := m.cfg.Current().Tags.DropCategories
 	mapped := m.Map(meta)
-	t := PostTrace{Site: category, PostURL: m.PostURL(meta), RatingListed: listedRating(profile, meta), Tags: mapped.Tags, Warnings: mapped.UnknownTargets}
+	t := PostTrace{Site: category, PostURL: m.PostURL(meta), RatingListed: m.listedRating(category, profile, meta), Tags: mapped.Tags, Warnings: mapped.UnknownTargets}
 
 	var tags []postTag
 	row := func(r TraceRow, spellings []string) {
@@ -58,11 +58,11 @@ func (m *Mapper) Trace(meta map[string]any) PostTrace {
 		}
 		t.Rows = append(t.Rows, r)
 	}
-	m.eachTag(category, profile, meta, func(field, s string) {
+	m.eachTag(category, profile, meta, func(field, listed, s string) {
 		source := normalizeTag(s)
 		after := applyTagRule(profile.TagRules, source)
 		mapped := splitPostTag(source)
-		r := TraceRow{Field: field, Listed: mapped.name, Category: mapped.category, Mapped: source, Ruled: after, RuleDropped: after == "" && source != ""}
+		r := TraceRow{Field: field, Listed: listed, Category: mapped.category, Mapped: source, Ruled: after, RuleDropped: after == "" && source != ""}
 		if after != "" {
 			r.Unchecked = droppedCategory(drop, after)
 		}
@@ -73,9 +73,8 @@ func (m *Mapper) Trace(meta map[string]any) PostTrace {
 			t.Warnings = append(t.Warnings, fmt.Sprintf("tag rule %s -> %s: %s is unchecked in Rules, so this tag never reaches monbooru", source, after, r.Unchecked))
 		}
 		row(r, blacklistReads(profile, s))
-	}, func(field, s string) {
-		source := normalizeTag(s)
-		row(TraceRow{Field: field, Listed: splitPostTag(source).name, MapDropped: true}, []string{source})
+	}, func(field, listed, s string) {
+		row(TraceRow{Field: field, Listed: listed, MapDropped: true}, []string{normalizeTag(s)})
 	})
 
 	t.Rating = m.postRating(category, profile, meta)
@@ -91,6 +90,12 @@ func (m *Mapper) Trace(meta map[string]any) PostTrace {
 	}
 	if m.SuspectFlattenedTags(meta) {
 		t.Refused = FlattenedTagsMsg
+	}
+	if err := m.ValidateSourceRating(meta); err != nil {
+		if t.Refused != "" {
+			t.Refused += "; "
+		}
+		t.Refused += "source rating: " + err.Error()
 	}
 	for _, rule := range rules {
 		if name, filed := rule.misfiled(tags); filed != "" {

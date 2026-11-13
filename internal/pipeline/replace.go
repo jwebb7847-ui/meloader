@@ -65,7 +65,15 @@ func (p *Processor) processReplace(ctx context.Context, job, snap *queue.Job) er
 		return nil
 	}
 	w := &downloaded[i]
+	if err := p.enrichTaxonomy(ctx, w.Meta); err != nil {
+		p.failEnrichFetch(ctx, job, snap, err)
+		return nil
+	}
 	if err := p.flattenedErr(w.Meta); err != nil {
+		p.failEnrichFetch(ctx, job, snap, err)
+		return nil
+	}
+	if err := p.ratingErr(w.Meta); err != nil {
 		p.failEnrichFetch(ctx, job, snap, err)
 		return nil
 	}

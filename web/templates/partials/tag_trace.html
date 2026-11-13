@@ -8,7 +8,7 @@
 {{if or .Rows .Rating}}
 <div class="table-scroll">
 <table class="grid-table trace-table">
-  <thead><tr><th>on the site</th><th>1 category</th><th>1 tag rule</th><th>2 blacklist</th><th>3 sent</th>{{if not $unpaired}}<th>4-6 {{$gallery}}</th>{{end}}</tr></thead>
+  <thead><tr><th>source tag</th><th>1 mapped category</th><th>1 tag rule</th><th>2 blacklist</th><th>3 sent</th>{{if not $unpaired}}<th>4-6 {{$gallery}}</th>{{end}}</tr></thead>
   <tbody>
   {{range .Rows}}
   <tr>

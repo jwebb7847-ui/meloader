@@ -26,6 +26,7 @@ import (
 	"github.com/monbooru/monloader/internal/shared/logx"
 	"github.com/monbooru/monloader/internal/similarity"
 	"github.com/monbooru/monloader/internal/sitestate"
+	"github.com/monbooru/monloader/internal/taxonomy"
 	internalweb "github.com/monbooru/monloader/internal/web"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -188,7 +189,36 @@ func main() {
 	ptrEngine.Start(ptrCtx)
 
 	sim := similarity.New(provider, mapper.CanonicalPostURL, mapper.PostURLFor)
-	proc := pipeline.New(runner, mapper, client, provider, workRoot, siteState, ptrEngine, sim)
+
+	taxonomyCache := filepath.Join(
+		stateDir,
+		"taxonomy",
+		"derpibooru.json",
+	)
+
+	derpibooruTaxonomy, err := taxonomy.NewDerpibooru(taxonomyCache)
+	if err != nil {
+		fatalf("loading source taxonomy cache: %v", err)
+	}
+
+	tagTaxonomy, err := taxonomy.NewRegistry(
+		derpibooruTaxonomy,
+	)
+	if err != nil {
+		fatalf("registering source taxonomy adapters: %v", err)
+	}
+
+	proc := pipeline.New(
+		runner,
+		mapper,
+		client,
+		provider,
+		workRoot,
+		siteState,
+		ptrEngine,
+		sim,
+		tagTaxonomy,
+	)
 
 	q := queue.New(proc, cfg.Downloader.Concurrency, 0)
 	q.SetRetention(cfg.Downloader.HistoryRetention())
@@ -206,7 +236,7 @@ func main() {
 	defer stopWatches()
 	go q.RunWatches(watchCtx, func() bool { return provider.Current().Monbooru.Held() })
 
-	srv, err := internalweb.NewServer(provider, *configPath, stateDir, workRoot, q, client, runner, mapper, catalog, siteState, ptrEngine, sim, profile)
+	srv, err := internalweb.NewServer(provider, *configPath, stateDir, workRoot, q, client, runner, mapper, catalog, siteState, ptrEngine, sim, tagTaxonomy, profile)
 	if err != nil {
 		fatalf("creating web server: %v", err)
 	}

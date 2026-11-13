@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/monbooru/monloader/internal/config"
@@ -30,6 +31,7 @@ import (
 	"github.com/monbooru/monloader/internal/shared/logx"
 	"github.com/monbooru/monloader/internal/similarity"
 	"github.com/monbooru/monloader/internal/sitestate"
+	"github.com/monbooru/monloader/internal/taxonomy"
 )
 
 type PTRService interface {
@@ -52,11 +54,22 @@ type Processor struct {
 	siteState *sitestate.Tracker
 	ptr       PTRService
 	sim       SimilarityService
+	taxonomy  taxonomy.Enricher
 	books     *queue.Store
 }
 
-func New(runner gdl.Runner, mapper *mapping.Mapper, client *monbooru.Client, cfg *config.Provider, workRoot string, siteState *sitestate.Tracker, ptr PTRService, sim SimilarityService) *Processor {
-	return &Processor{runner: runner, mapper: mapper, client: client, cfg: cfg, workRoot: workRoot, siteState: siteState, ptr: ptr, sim: sim}
+func New(runner gdl.Runner, mapper *mapping.Mapper, client *monbooru.Client, cfg *config.Provider, workRoot string, siteState *sitestate.Tracker, ptr PTRService, sim SimilarityService, taxonomyEnricher taxonomy.Enricher) *Processor {
+	return &Processor{
+		runner:    runner,
+		mapper:    mapper,
+		client:    client,
+		cfg:       cfg,
+		workRoot:  workRoot,
+		siteState: siteState,
+		ptr:       ptr,
+		sim:       sim,
+		taxonomy:  taxonomyEnricher,
+	}
 }
 
 var (
@@ -68,6 +81,83 @@ var (
 )
 
 func (p *Processor) UseStore(st *queue.Store) { p.books = st }
+func (p *Processor) enrichTaxonomy(ctx context.Context, meta map[string]any) error {
+	if p.taxonomy == nil {
+		return nil
+	}
+
+	started := time.Now()
+	err := p.taxonomy.Enrich(ctx, meta)
+
+	logx.Infof(
+		"perf: taxonomy stage=authoritative source=%s, duration=%s, err=%v",
+		kwdict.String(meta, "category"),
+		time.Since(started).Round(time.Millisecond),
+		err,
+	)
+
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return &sourceMetadataError{&outcome.CodedError{
+			Code: outcome.ErrCodeMappingFailed,
+			Msg:  "source taxonomy: " + err.Error(),
+		}}
+	}
+	return nil
+}
+
+func (p *Processor) warmTaxonomy(
+	ctx context.Context,
+	resolved []gdl.Item,
+	blacklisted map[int]string,
+) func() {
+	warmer, ok := p.taxonomy.(taxonomy.Warmer)
+	if !ok || len(resolved) == 0 {
+		return func() {}
+	}
+
+	warmCtx, cancel := context.WithCancel(ctx)
+
+	var wg sync.WaitGroup
+
+	for i := range resolved {
+		if _, skipped := blacklisted[i]; skipped {
+			continue
+		}
+
+		meta := maps.Clone(resolved[i].Meta)
+		if len(meta) == 0 {
+			continue
+		}
+
+		postID := kwdict.ID(meta)
+
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			if err := warmer.Warm(
+				warmCtx,
+				meta,
+			); err != nil &&
+				warmCtx.Err() == nil {
+				logx.Infof(
+					"taxonomy warm post %s: %v",
+					postID,
+					err,
+				)
+			}
+		}()
+	}
+
+	return func() {
+		cancel()
+		wg.Wait()
+	}
+}
 
 func (p *Processor) ReportDropped(ctx context.Context, snap *queue.Job) {
 	switch snap.Kind {
@@ -83,6 +173,21 @@ func (p *Processor) ReportDropped(ctx context.Context, snap *queue.Job) {
 
 func (p *Processor) Process(ctx context.Context, job *queue.Job) error {
 	snap := job.Snapshot()
+	started := time.Now()
+
+	defer func() {
+		kind := string(snap.Kind)
+		if kind == "" {
+			kind = "download"
+		}
+
+		logx.Infof(
+			"perf: job=%d, kind=%s, stage=total, duration=%s",
+			snap.ID,
+			kind,
+			time.Since(started).Round(time.Millisecond),
+		)
+	}()
 
 	if snap.Kind == queue.KindContrib {
 		return p.processContrib(ctx, job, snap)
@@ -142,7 +247,17 @@ func (p *Processor) processDownload(ctx context.Context, job, snap *queue.Job) e
 	if limit > 0 {
 		probe = strconv.Itoa(snap.Offset+1) + "-" + strconv.Itoa(snap.Offset+limit+1)
 	}
+	resolveStarted := time.Now()
 	res, err := p.runner.Resolve(ctx, snap.URL, probe, false)
+
+	logx.Infof(
+		"perf: job=%d stage=resolve duration=%s items=%d err=%v",
+		snap.ID,
+		time.Since(resolveStarted).Round(time.Millisecond),
+		len(res.Items),
+		err,
+	)
+
 	if err != nil {
 		return abortJob(ctx, job, err)
 	}
@@ -232,6 +347,9 @@ func (p *Processor) processMetadata(ctx context.Context, job *queue.Job, snap *q
 	if err == nil {
 		err = p.manyPostsErr(ctx, snap.URL, meta)
 	}
+	if err == nil {
+		err = p.enrichTaxonomy(ctx, meta)
+	}
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -242,6 +360,10 @@ func (p *Processor) processMetadata(ctx context.Context, job *queue.Job, snap *q
 	job.SetSite(kwdict.String(meta, "category"))
 	labelEnrichPost(job, meta)
 	if err := p.flattenedErr(meta); err != nil {
+		p.failEnrichFetch(ctx, job, snap, err)
+		return nil
+	}
+	if err := p.ratingErr(meta); err != nil {
 		p.failEnrichFetch(ctx, job, snap, err)
 		return nil
 	}
@@ -295,12 +417,34 @@ func (p *Processor) flattenedErr(meta map[string]any) error {
 	return errFlattened
 }
 
-var errFlattened = &outcome.CodedError{Code: outcome.ErrCodeMappingFailed, Msg: mapping.FlattenedTagsMsg}
+var errFlattened = &sourceMetadataError{&outcome.CodedError{
+	Code: outcome.ErrCodeMappingFailed,
+	Msg:  mapping.FlattenedTagsMsg,
+}}
+
+// Refusals before an online enrich need a fetch outcome because Mebooru
+// has received no metadata request to report on.
+type sourceMetadataError struct {
+	*outcome.CodedError
+}
+
+func (e *sourceMetadataError) Unwrap() error { return e.CodedError }
+
+func (p *Processor) ratingErr(meta map[string]any) error {
+	if err := p.mapper.ValidateSourceRating(meta); err != nil {
+		return &sourceMetadataError{&outcome.CodedError{
+			Code: outcome.ErrCodeMappingFailed,
+			Msg:  "source rating: " + err.Error(),
+		}}
+	}
+	return nil
+}
 
 // monbooru records an enrich it refused; a post stopped before the enrich it
 // has to be told of.
 func (p *Processor) failOnline(ctx context.Context, job, snap *queue.Job, err error) {
-	if errors.Is(err, errFlattened) {
+	var refusal *sourceMetadataError
+	if errors.As(err, &refusal) {
 		p.failEnrichFetch(ctx, job, snap, err)
 		return
 	}
@@ -437,6 +581,16 @@ func (p *Processor) fetch(ctx context.Context, job, snap *queue.Job, resolved []
 		blacklisted = p.blacklistedRows(job, resolved)
 	}
 	fetchRange, anyKept := keptRange(rng, snap.Offset, len(resolved), blacklisted)
+
+	stopTaxonomyWarm := func() {}
+	if anyKept {
+		stopTaxonomyWarm = p.warmTaxonomy(
+			ctx,
+			resolved,
+			blacklisted,
+		)
+	}
+	defer stopTaxonomyWarm()
 
 	workDir := filepath.Join(p.workRoot, fmt.Sprintf("job-%d", snap.ID))
 	if mkErr := os.MkdirAll(workDir, 0o755); mkErr != nil {
@@ -731,6 +885,14 @@ func (p *Processor) processItems(ctx context.Context, job *queue.Job, entries []
 			skipItem(job, i, outcome.SkippedUnsupported, "")
 			continue
 		}
+		// Source taxonomy is resolved before blacklist and mapping so category-
+		// qualified rules see the same metadata that reaches monbooru.
+		if err := p.enrichTaxonomy(ctx, d.Meta); err != nil {
+			removeScratch(d.Path)
+			failItem(job, i, errorCode(err), err.Error())
+			continue
+		}
+
 		// The sidecar is the first sight of a flat-tag site's categories.
 		if note, hit := p.mapper.Blacklisted(d.Meta); hit {
 			removeScratch(d.Path)
@@ -742,7 +904,13 @@ func (p *Processor) processItems(ctx context.Context, job *queue.Job, entries []
 			failItem(job, i, errorCode(err), err.Error())
 			continue
 		}
+		if err := p.ratingErr(d.Meta); err != nil {
+			removeScratch(d.Path)
+			failItem(job, i, errorCode(err), err.Error())
+			continue
+		}
 		pf := p.mapper.Map(d.Meta)
+
 		labelFrom := kwdict.String(d.Meta, "category")
 		if labelFrom == mapping.CategoryDirectlink {
 			labelFrom = kwdict.String(d.Meta, "domain")
@@ -968,6 +1136,28 @@ func (p *Processor) processCBZ(ctx context.Context, job *queue.Job, itemIdx int,
 	if len(pages) < total {
 		failItem(job, itemIdx, outcome.ErrCodeDownloadFailed, fmt.Sprintf("bundled %d of %d pages", len(pages), total))
 		return
+	}
+	// A bundle can only use the combined metadata after every page passes.
+	for _, d := range downloaded {
+		if err := p.enrichTaxonomy(ctx, d.Meta); err != nil {
+			if ctx.Err() == nil {
+				failItem(job, itemIdx, errorCode(err), err.Error())
+			}
+			return
+		}
+		if note, hit := p.mapper.Blacklisted(d.Meta); hit {
+			p.markBookBlacklisted(job, sourceURL, d.Meta)
+			skipItem(job, itemIdx, outcome.SkippedBlacklist, note)
+			return
+		}
+		if err := p.flattenedErr(d.Meta); err != nil {
+			failItem(job, itemIdx, errorCode(err), err.Error())
+			return
+		}
+		if err := p.ratingErr(d.Meta); err != nil {
+			failItem(job, itemIdx, errorCode(err), err.Error())
+			return
+		}
 	}
 
 	dest := filepath.Join(workDir, "bundle.cbz")
