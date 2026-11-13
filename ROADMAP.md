@@ -30,6 +30,7 @@ Keep the network boundary intact: Meloader is the explicitly WAN-capable acquisi
 - `meloader-taxonomy-speed`: hardened Derpibooru enrichment, caching and performance work.
 - `meloader-source-adapter-registry`: source-keyed taxonomy dispatch and registry tests; intended baseline for item 3.
 - `meloader-item3-optional-capabilities`: item 3A changes in [draft PR #1](https://github.com/jwebb7847-ui/meloader/pull/1). These changes are **not merged**. The initial Go race-test and vet workflow passed on 2026-11-13; integration and performance acceptance remain outstanding.
+- Design proposal branch: `meloader-item3-semantic-contract-proposal` (stacked on e621 validation); a documented contract for review, not a runtime policy implementation.
 
 The initial taxonomy registry intentionally lives in `internal/taxonomy`. Do not move the namespace prematurely; it should only be promoted when the final source-semantics contract warrants it.
 
@@ -48,7 +49,7 @@ Cache persistence, batch lookup, in-flight deduplication, retry/error handling, 
 - [x] Initial source registry and dispatch in `meloader-source-adapter-registry`.
 - [x] Draft optional enrichment/warming interfaces and tests in PR #1 (not merged; CI result pending).
 - [x] Establish a working automated Go test and race-check gate and verify item 3A ([passing run](https://github.com/jwebb7847-ui/meloader/actions/runs/43335802201)); later implementation commits still require their own checks.
-- [ ] Define the semantic contract: source ownership, field-level authority, absent vs invalid, fallback, error propagation, policy precedence.
+- [ ] Review and approve [item 3B proposed source-semantics contract](docs/architecture/source-semantics-proposal.md): source ownership, sparse field-level claims, absent vs invalid, fallback, error propagation, rating handling, and policy precedence. **Proposal only; no behavior change until reviewed.**
 - [ ] Extend only source-specific capabilities actually needed: taxonomy, rating interpretation, canonical identity/URL, integrity validation, optional enrichment and declared capabilities.
 - [ ] Preserve profile/user mapping behavior and the existing Mebooru metadata contract.
 - [ ] Validate a second source with different metadata semantics (e621). Offline fixture tests passed on [CI run 43337943681](https://github.com/jwebb7847-ui/meloader/actions/runs/43337943681); opt-in live extractor confirmation remains open; local synthetic processing benchmark was run on Apple M5 (results below). See [e621 validation protocol](docs/validation/e621.md).
