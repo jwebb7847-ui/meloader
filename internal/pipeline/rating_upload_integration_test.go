@@ -30,6 +30,7 @@ func TestRatingIntegrityAtImageUploadBoundary(t *testing.T) {
 		wantUpload bool
 		wantTags   []string
 		wantReason string
+		ratingOverrides []config.RatingOverride
 	}{
 		{
 			name: "categorized e621 valid source rating",
@@ -42,6 +43,46 @@ func TestRatingIntegrityAtImageUploadBoundary(t *testing.T) {
 			},
 			wantUpload: true,
 			wantTags:   []string{"character:rainbow_dash", "rating:general", "sky"},
+		},
+		{
+			name: "danbooru general has its own source meaning",
+			meta: map[string]any{
+				"category": "danbooru",
+				"id":       42,
+				"rating":   "g",
+			},
+			wantUpload: true,
+			wantTags:   []string{"rating:general"},
+		},
+		{
+			name: "danbooru sensitive keeps its distinct meaning",
+			meta: map[string]any{
+				"category": "danbooru",
+				"id":       43,
+				"rating":   "s",
+			},
+			wantUpload: true,
+			wantTags:   []string{"rating:sensitive"},
+		},
+		{
+			name: "philomena safe rating from source tags",
+			meta: map[string]any{
+				"category": "derpibooru",
+				"id":       44,
+				"tags":     []any{"safe"},
+			},
+			wantUpload: true,
+			wantTags:   []string{"rating:general"},
+		},
+		{
+			name: "safebooru built-in q rating interpretation",
+			meta: map[string]any{
+				"category": "safebooru",
+				"id":       45,
+				"rating":   "q",
+			},
+			wantUpload: true,
+			wantTags:   []string{"rating:general"},
 		},
 		{
 			name: "generic source genuinely unrated",
@@ -60,6 +101,37 @@ func TestRatingIntegrityAtImageUploadBoundary(t *testing.T) {
 				"id":             536,
 				"rating":         "not-a-rating",
 				"tags_character": []any{"rainbow_dash"},
+			},
+			wantReason: "source rating:",
+		},
+		{
+			name: "danbooru malformed rating",
+			meta: map[string]any{
+				"category": "danbooru",
+				"id":       538,
+				"rating":   "not-a-rating",
+			},
+			wantReason: "source rating:",
+		},
+		{
+			name: "philomena conflicting rating tags",
+			meta: map[string]any{
+				"category": "derpibooru",
+				"id":       539,
+				"tags":     []any{"safe", "explicit"},
+			},
+			wantReason: "source rating:",
+		},
+		{
+			name: "user override cannot legitimize unknown e621 rating",
+			meta: map[string]any{
+				"category":       "e621",
+				"id":             540,
+				"rating":         "totally-unknown",
+				"tags_character": []any{"rainbow_dash"},
+			},
+			ratingOverrides: []config.RatingOverride{
+				{Site: "e621", From: "totally-unknown", To: mapping.RatingGeneral},
 			},
 			wantReason: "source rating:",
 		},
@@ -107,6 +179,7 @@ func TestRatingIntegrityAtImageUploadBoundary(t *testing.T) {
 			cfg.Monbooru.APIURL = srv.URL
 			cfg.Monbooru.APIToken = "integration-test-token"
 			cfg.Tags.Blacklist = nil
+			cfg.RatingOverrides = tc.ratingOverrides
 			provider := config.NewProvider(cfg)
 			mapper, err := mapping.New(provider, "")
 			if err != nil {
