@@ -173,6 +173,22 @@ A follow-up **test-only regression** covers Safebooru's string-valued categorize
 
 Once metadata and routing both pass, import **only this one post** through Meloader using `up to 1`. Confirm `1 created` or a clearly distinguished duplicate; inspect the individual Mebooru image detail for `rating:sensitive`, categorized tags and source provenance. Do not turn a failed source into a generic/unrated import.
 
+### Safebooru live end-to-end acceptance — PASSED, 2026-11-13
+
+The operator submitted one post through the **running Meloader audit UI**:
+
+- Source: `https://safebooru.org/index.php?page=post&s=view&id=1169132`
+- Extractor/category: `safebooru` / gallery-dl Gelbooru-v02
+- Destination: **`Audit_A`**, not `home` or `Audit_B`
+- Meloader queue: **`succeeded`**, **`1 created`**, per-item **`created 10 tags sent`**
+- Mebooru single-image detail: **image ID 8**, `safebooru_1169132_9b0101aa8a66b09c2ac564a1bad8269d.jpg`, JPEG **700 × 506**, **242.1 KiB**. Source `safebooru`, `Added via monloader`, source-original link to `i1.pixiv.net`; hashes present. Footer displays connected to monloader.
+- **Image-specific tag sidebar has all ten tagged values**: rating `general` (1); meta `tagme` (1); artist `kawanakajima` (1); copyright `dc_comics`, `mcdonald's`, `the_dark_knight` (3); character `heath_ledger`, `ronald_mcdonald`, `the_joker` (3); general `parody` (1). The counts next to tags in the UI are overall usage counts, not per-image multiplicities; the list itself is image-specific.
+- User estimated approximately **4 seconds** for this single job. This is an anecdotal wall-time observation, **not** measured sustained throughput.
+- Preceding saved metadata validation showed `s` and string-valued `tags_artist`, `tags_character`, `tags_copyright`, `tags_general`, `tags_metadata`; their correct category persistence and `s -> rating:general` are now demonstrated against the **real Mebooru HTTP/API + on-disk library**, not just the mock.
+- Preliminary media HEAD `Content-Length: 247882` bytes matches the image-size displayed (~242.1 KiB); HEAD was advisory, not enforced by the downloader.
+
+**Result:** The second independent acquisition family, Safebooru/Gelbooru-v02, has **passed full positive end-to-end acceptance**, following the earlier Derpibooru/Philomena pass. **Not** yet proved: repeated/multi-post real workload throughput, all source-rating variants, live invalid-rating rejection against a running Mebooru (the mock-HTTP negative tests do pass), or e621/Danbooru network transport access.
+
 ## 4. Staged live workload, not a bulk leap
 
 After the one-post cross-family import works:
@@ -191,7 +207,7 @@ For every run, record the source URL/query, gallery, two running server commit S
 - [x] Execute local Apple M5 loopback HTTP benchmark: median 20=2,118 posts/s, 200=6,130 posts/s, 1,000=5,840 posts/s; synthetic 16-KiB files and mock Mebooru only
 - [x] Metadata-only source contrast: Derpibooru original and retest consistent, Safebooru post 1169132 confirmed as a single post with native `s` and five categorized tag fields; e621/Danbooru remain reset-blocked
 - [x] Safebooru image HEAD preflight passed with verified curl TLS, `image/jpeg`, `247882` bytes (0.24 MiB); Python 3.12's own default CA-file lookup was unresolved and its urllib HEAD failed certificate verification
-- [ ] One live Danbooru (or another distinct-rated-family) post accepted with correct native/mapped rating
+- [x] One live alternate-family Safebooru/Gelbooru-v02 post imported to Audit_A with `rating:general`, all 10 categorized per-image tags and source provenance (Mebooru ID 8); Danbooru-specific live rating `s -> sensitive` remains unverified due to transport reset
 - [ ] Bounded 5-post and 20-post live workloads accepted and measured
 - [ ] Live e621 categorized extractor confirmation (deferred for transport reset; do not block all other testing)
 - [ ] Source taxonomy semantic decisions beyond the approved rating-integrity distinction (discuss before changes)
