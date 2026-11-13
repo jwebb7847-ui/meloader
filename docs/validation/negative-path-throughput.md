@@ -261,6 +261,19 @@ A passing run leaves one synthetic control image in `Audit_A` and reports its im
 
 **Local audit result (2026-11-13) — PASSED.** The operator ran `TestRatingIntegrityAgainstLocalAuditGallery` with `-race` from detached Meloader revision `ed6477fe9d2c45635a6515a7458b98568434d440` on macOS, against the running Mebooru audit server. The malformed Safebooru item failed with `mapping_failed: source rating: safebooru returned an unrecognized rating "not-a-rating"`. The proxy counted exactly **one** upload attempt, the valid control, and a read-back from `Audit_A` matched the generated control's SHA-256 (image ID `7` in this run). The test also passed its scratch-cleanup assertions. The reported `0.02 s` test duration is for the local synthetic check.
 
+## 6. Live Derpibooru taxonomy cache audit
+
+Run the opt-in test from the detached Meloader QA worktree using the isolated gallery-dl 1.32.19 executable. The workload resolves the newest 20 Derpibooru posts tagged `safe` and `rainbow dash` once. The exact post IDs are printed and the same metadata is reused across all four passes.
+
+```sh
+MELOADER_DERPIBOORU_CACHE_AUDIT_GDL="$HOME/Library/Application Support/Meloader Validation/gallery-dl-1.32.19/bin/gallery-dl" \
+  go test ./internal/taxonomy -run '^TestDerpibooruLiveTaxonomyColdWarm$' -count=1 -v
+```
+
+The cold pass uses a new empty cache path in the test's temporary directory and calls the real Derpibooru taxonomy API. Three warm passes each construct a fresh resolver from the same persisted file and fail if the resolver attempts HTTP. Every pass checks the general rating and Rainbow Dash character category. Warm passes must reproduce every post's full mapped tag list from the cold pass.
+
+Record the gallery-dl version, post IDs, distinct source tags, metadata fetch time, cache load time, enrich-and-map time, taxonomy HTTP attempts, mapped tags and cache bytes. Compare the cold enrich-and-map time to the median of the three warm passes, with cache load reported separately. The cold timing includes taxonomy HTTP and persistence. The warm passes run in the same process and the OS can cache the file. This measures the resolver and mapper sequentially. The downloader's concurrent cache warming, media transfers, time to first import and gallery storage are outside this measurement. The test uses its own cache and needs neither running audit service.
+
 ## Remaining acceptance gates
 
 - [x] Positive Derpibooru source -> Mebooru Audit_A -> per-image metadata, tags and original source persisted
@@ -274,5 +287,6 @@ A passing run leaves one synthetic control image in `Audit_A` and reports its im
 - [x] Five-post Safebooru acquisition and spot-checked metadata persistence accepted: all 5 created, ~12 s wall-time, 207 tags submitted, exact `...` validator warning intentionally rejected; Audit_A image IDs 9 and 11 confirm rating/category/source preservation
 - [x] Bounded 20-position workload and full 20-new-image continuation accepted and timed; source metadata spot-checked in the first window
 - [x] Malformed-rating test against the running local Audit_A server passed: one rejected item, one upload attempt and one SHA-256-verified control
+- [ ] Record the bounded live Derpibooru cold/warm taxonomy measurement
 - [ ] Live e621 categorized extractor confirmation (deferred for transport reset; do not block all other testing)
 - [ ] Source taxonomy semantic decisions beyond the approved rating-integrity distinction (discuss before changes)
