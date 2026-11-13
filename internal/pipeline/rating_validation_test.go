@@ -42,7 +42,7 @@ func TestRatingErrReturnsMappingFailureOnlyForBadRatedSource(t *testing.T) {
 			if got := errorCode(err); got != outcome.ErrCodeMappingFailed {
 				t.Fatalf("error code %q, want mapping_failed", got)
 			}
-			var specific *invalidSourceRatingError
+			var specific *sourceMetadataError
 			if !errors.As(err, &specific) {
 				t.Fatalf("error type %T does not preserve source-rating identity", err)
 			}

@@ -33,6 +33,7 @@ import (
 	"github.com/monbooru/monloader/internal/shared/webui"
 	"github.com/monbooru/monloader/internal/similarity"
 	"github.com/monbooru/monloader/internal/sitestate"
+	"github.com/monbooru/monloader/internal/taxonomy"
 	webFS "github.com/monbooru/monloader/web"
 )
 
@@ -81,6 +82,7 @@ type Server struct {
 	siteState *sitestate.Tracker
 	ptr       ptrEngine
 	sim       simService
+	taxonomy  taxonomy.Enricher
 
 	gdlMu        sync.Mutex
 	gdlJob       *gdlJob
@@ -120,7 +122,7 @@ func (s *Server) RequestRestart() {
 	s.RequestQuit()
 }
 
-func NewServer(cfg *config.Provider, configPath, stateDir, workRoot string, q *queue.Queue, client *monbooru.Client, runner gdl.Runner, mapper *mapping.Mapper, catalog *gdl.Catalog, siteState *sitestate.Tracker, ptrEngine *ptr.Engine, sim *similarity.Client, dk Desktop) (*Server, error) {
+func NewServer(cfg *config.Provider, configPath, stateDir, workRoot string, q *queue.Queue, client *monbooru.Client, runner gdl.Runner, mapper *mapping.Mapper, catalog *gdl.Catalog, siteState *sitestate.Tracker, ptrEngine *ptr.Engine, sim *similarity.Client, tagTaxonomy taxonomy.Enricher, dk Desktop) (*Server, error) {
 	funcs := templateFuncs()
 	maps.Copy(funcs, webui.Funcs())
 	tmpl, err := template.New("").Funcs(funcs).ParseFS(webFS.FS, "templates/*.html", "templates/partials/*.html")
@@ -148,6 +150,7 @@ func NewServer(cfg *config.Provider, configPath, stateDir, workRoot string, q *q
 		siteState:  siteState,
 		ptr:        ptrEngine,
 		sim:        sim,
+		taxonomy:   tagTaxonomy,
 		sessions:   session.New(),
 		loginRL:    session.NewBackoff(),
 		tmpl:       tmpl,

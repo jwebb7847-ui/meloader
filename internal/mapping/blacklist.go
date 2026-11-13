@@ -171,11 +171,11 @@ func (m *Mapper) Blacklisted(meta map[string]any) (note string, blacklisted bool
 	}
 	profile := m.profileFor(category)
 	var tags []postTag
-	m.eachTag(category, profile, meta, func(_, s string) {
+	m.eachTag(category, profile, meta, func(_, _, s string) {
 		for _, read := range blacklistReads(profile, s) {
 			tags = append(tags, splitPostTag(read))
 		}
-	}, func(_, s string) {
+	}, func(_, _, s string) {
 		tags = append(tags, splitPostTag(normalizeTag(s)))
 	})
 	rule, hit := firstBlacklistRule(rules, tags, m.postRating(category, profile, meta), m.flatOnly(profile, meta))

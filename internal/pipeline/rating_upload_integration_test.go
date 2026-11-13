@@ -25,12 +25,16 @@ import (
 // in-process fake Mebooru. No real site, configured gallery, or internet is used.
 func TestRatingIntegrityAtImageUploadBoundary(t *testing.T) {
 	cases := []struct {
-		name       string
-		meta       map[string]any
-		wantUpload bool
-		wantTags   []string
-		wantReason string
+		name            string
+		meta            map[string]any
+		wantUpload      bool
+		wantTags        []string
+		wantReason      string
 		ratingOverrides []config.RatingOverride
+		tagOverrides    []config.TagOverride
+		wantSource      string
+		wantPostID      string
+		wantURL         string
 	}{
 		{
 			name: "categorized e621 valid source rating",
@@ -43,6 +47,43 @@ func TestRatingIntegrityAtImageUploadBoundary(t *testing.T) {
 			},
 			wantUpload: true,
 			wantTags:   []string{"character:rainbow_dash", "rating:general", "sky"},
+		},
+		{
+			name: "user category rules retain source attribution",
+			meta: map[string]any{
+				"category":       "e621",
+				"id":             "542",
+				"rating":         "s",
+				"tags":           []any{"rainbow_dash", "canine", "sky"},
+				"tags_character": []any{"rainbow_dash"},
+				"tags_species":   []any{"canine"},
+				"tags_general":   []any{"sky"},
+			},
+			tagOverrides: []config.TagOverride{
+				{Site: "e621", From: "character", To: "meta"},
+				{Site: "e621", From: "species", To: ""},
+			},
+			wantUpload: true,
+			wantTags:   []string{"meta:rainbow_dash", "rating:general", "sky"},
+			wantSource: "e621",
+			wantPostID: "542",
+			wantURL:    "https://e621.net/posts/542",
+		},
+		{
+			name: "empty and optional category fields cannot legitimize flat tags",
+			meta: map[string]any{
+				"category":       "e621",
+				"id":             "543",
+				"rating":         "s",
+				"tags":           []any{"rainbow_dash"},
+				"tags_character": []any{},
+				"tags_general":   map[string]any{"bad": "shape"},
+				"tags_bookmark":  []any{"bookmark"},
+			},
+			tagOverrides: []config.TagOverride{
+				{Site: "e621", From: "general", To: "character"},
+			},
+			wantReason: mapping.FlattenedTagsMsg,
 		},
 		{
 			name: "danbooru general has its own source meaning",
@@ -184,6 +225,17 @@ func TestRatingIntegrityAtImageUploadBoundary(t *testing.T) {
 					http.Error(w, "invalid tags", http.StatusBadRequest)
 					return
 				}
+				if tc.wantSource != "" {
+					if got := r.FormValue(contract.FieldSource); got != tc.wantSource {
+						t.Errorf("source = %q, want %q", got, tc.wantSource)
+					}
+					if got := r.FormValue(contract.FieldPostID); got != tc.wantPostID {
+						t.Errorf("post ID = %q, want %q", got, tc.wantPostID)
+					}
+					if got := r.FormValue(contract.FieldURL); got != tc.wantURL {
+						t.Errorf("post URL = %q, want %q", got, tc.wantURL)
+					}
+				}
 				uploaded <- tags
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusCreated)
@@ -196,6 +248,7 @@ func TestRatingIntegrityAtImageUploadBoundary(t *testing.T) {
 			cfg.Monbooru.APIToken = "integration-test-token"
 			cfg.Tags.Blacklist = nil
 			cfg.RatingOverrides = tc.ratingOverrides
+			cfg.TagOverrides = tc.tagOverrides
 			provider := config.NewProvider(cfg)
 			mapper, err := mapping.New(provider, "")
 			if err != nil {

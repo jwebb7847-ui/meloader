@@ -236,7 +236,7 @@ func main() {
 	defer stopWatches()
 	go q.RunWatches(watchCtx, func() bool { return provider.Current().Monbooru.Held() })
 
-	srv, err := internalweb.NewServer(provider, *configPath, stateDir, workRoot, q, client, runner, mapper, catalog, siteState, ptrEngine, sim, profile)
+	srv, err := internalweb.NewServer(provider, *configPath, stateDir, workRoot, q, client, runner, mapper, catalog, siteState, ptrEngine, sim, tagTaxonomy, profile)
 	if err != nil {
 		fatalf("creating web server: %v", err)
 	}

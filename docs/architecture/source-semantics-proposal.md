@@ -1,6 +1,6 @@
 # Item 3B — Source semantics contract (proposal)
 
-**Status: PARTIALLY APPROVED.** The invalid-rating versus genuinely unrated distinction was approved on 2026-11-13 and is being implemented on a separate feature branch. Other questions in this document remain proposals; do not consider them approved merely because they appear here.
+**Status: PARTIALLY APPROVED.** Rating integrity, source authority with user-controlled filing, and refusal when required taxonomy is unavailable or invalid are approved. Native category fidelity and raw metadata retention remain open.
 
 **Reviewed against:** Meloader `meloader-item3-e621-validation` at `67685c8`, including `internal/taxonomy/registry.go`, `internal/taxonomy/derpibooru.go`, `internal/mapping/map.go`, and `internal/pipeline/processor.go`; source-side expectations validated with pinned gallery-dl v1.32.19. See [ROADMAP.md](../../ROADMAP.md).
 
@@ -89,11 +89,11 @@ Today, a malformed or unknown rating can map to the empty string; the code comme
 6. Tests cover known-good, missing, invalid and transient-failure paths without inventing data.
 7. Comparing against the current branch proves no material warm-path regression; a future controlled source-to-library import is required before making end-to-end speed claims.
 
-## Product decisions awaiting approval
+## Product decisions
 
-1. **Source authority vs user control:** adapters establish what a tag means *at the source*; users can still reclassify or suppress what is saved in Mebooru, but cannot retroactively change the reported source fact. Recommend **yes**.
-2. **Invalid required taxonomy:** when a categorizing site unexpectedly supplies a flat-only payload or required authoritative lookup fails, prefer a visible failed/retryable item over silently misclassifying every tag. This matches the current Derpibooru/e621 guard. Recommend **retain**.
-3. **Invalid required rating — APPROVED 2026-11-13:** A source from a known rating-bearing booru family with missing, malformed, or conflicting rating evidence must fail visibly before its metadata/file is automatically pushed. A genuinely unrated generic source may remain unrated. This is approved separately from any Mebooru default filter or future local AI classification workflow. Implementation is in `meloader-item3-rating-integrity`; [Go race tests and vet passed](https://github.com/jwebb7847-ui/meloader/actions/runs/43344451398), with live integration verification still pending. No change to the Mebooru contract.
+1. **Source authority and user control — APPROVED.** Source taxonomy determines how the source described a tag. User overrides and rules determine how Meloader sends it to Mebooru, including reclassification and suppression. The tag trace shows the source field and spelling alongside the mapped category and the tag sent. Derpibooru trace uses the same taxonomy adapter as acquisition. Source identity and attribution continue to travel with the mapped tags.
+2. **Invalid or unavailable required taxonomy — APPROVED.** When an extractor expected to categorize tags supplies flat tags without usable category data, the item fails visibly with `mapping_failed`. Empty, unreadable and bookmark-only fields cannot satisfy this check. If the required Derpibooru lookup fails, the item fails before sending image or tag data. This applies to downloads, metadata refresh, online lookup, replacement and bundle pages. Generic flat-tag imports still use the existing mapper.
+3. **Invalid required rating — APPROVED 2026-11-13:** A source from a known rating-bearing booru family with missing, malformed, or conflicting rating evidence must fail visibly before its metadata/file is automatically pushed. A genuinely unrated generic source may remain unrated. This is approved separately from any Mebooru default filter or future local AI classification workflow. Implementation is in `meloader-item3-rating-integrity`; [Go race tests and vet passed](https://github.com/jwebb7847-ui/meloader/actions/runs/43344451398), with live positive and malformed-rating checks completed against local Mebooru for reachable sources. No change to the Mebooru contract.
 4. **Category fidelity:** should `lore` and `contributor` (and other native categories) have distinct Mebooru categories when available, or remain mapped to today's broader `meta`/`artist`? **Needs a category-model discussion**, not a rushed source-adapter patch.
 5. **Raw metadata retention:** retain enough raw evidence for debugging versus persist full upstream payloads. **Defer** until storage/privacy/operational costs are defined.
 

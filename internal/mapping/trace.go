@@ -58,11 +58,11 @@ func (m *Mapper) Trace(meta map[string]any) PostTrace {
 		}
 		t.Rows = append(t.Rows, r)
 	}
-	m.eachTag(category, profile, meta, func(field, s string) {
+	m.eachTag(category, profile, meta, func(field, listed, s string) {
 		source := normalizeTag(s)
 		after := applyTagRule(profile.TagRules, source)
 		mapped := splitPostTag(source)
-		r := TraceRow{Field: field, Listed: mapped.name, Category: mapped.category, Mapped: source, Ruled: after, RuleDropped: after == "" && source != ""}
+		r := TraceRow{Field: field, Listed: listed, Category: mapped.category, Mapped: source, Ruled: after, RuleDropped: after == "" && source != ""}
 		if after != "" {
 			r.Unchecked = droppedCategory(drop, after)
 		}
@@ -73,9 +73,8 @@ func (m *Mapper) Trace(meta map[string]any) PostTrace {
 			t.Warnings = append(t.Warnings, fmt.Sprintf("tag rule %s -> %s: %s is unchecked in Rules, so this tag never reaches monbooru", source, after, r.Unchecked))
 		}
 		row(r, blacklistReads(profile, s))
-	}, func(field, s string) {
-		source := normalizeTag(s)
-		row(TraceRow{Field: field, Listed: splitPostTag(source).name, MapDropped: true}, []string{source})
+	}, func(field, listed, s string) {
+		row(TraceRow{Field: field, Listed: listed, MapDropped: true}, []string{normalizeTag(s)})
 	})
 
 	t.Rating = m.postRating(category, profile, meta)

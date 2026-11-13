@@ -100,10 +100,10 @@ func (p *Processor) enrichTaxonomy(ctx context.Context, meta map[string]any) err
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		return &outcome.CodedError{
+		return &sourceMetadataError{&outcome.CodedError{
 			Code: outcome.ErrCodeMappingFailed,
 			Msg:  "source taxonomy: " + err.Error(),
-		}
+		}}
 	}
 	return nil
 }
@@ -417,20 +417,22 @@ func (p *Processor) flattenedErr(meta map[string]any) error {
 	return errFlattened
 }
 
-var errFlattened = &outcome.CodedError{Code: outcome.ErrCodeMappingFailed, Msg: mapping.FlattenedTagsMsg}
+var errFlattened = &sourceMetadataError{&outcome.CodedError{
+	Code: outcome.ErrCodeMappingFailed,
+	Msg:  mapping.FlattenedTagsMsg,
+}}
 
-// A malformed or missing rating from a source known to provide one must
-// not be sent as unrated: Mebooru permits unrated items under every ceiling.
-// Keep the error's identity so online refetches report their failures too.
-type invalidSourceRatingError struct {
+// Refusals before an online enrich need a fetch outcome because Mebooru
+// has received no metadata request to report on.
+type sourceMetadataError struct {
 	*outcome.CodedError
 }
 
-func (e *invalidSourceRatingError) Unwrap() error { return e.CodedError }
+func (e *sourceMetadataError) Unwrap() error { return e.CodedError }
 
 func (p *Processor) ratingErr(meta map[string]any) error {
 	if err := p.mapper.ValidateSourceRating(meta); err != nil {
-		return &invalidSourceRatingError{&outcome.CodedError{
+		return &sourceMetadataError{&outcome.CodedError{
 			Code: outcome.ErrCodeMappingFailed,
 			Msg:  "source rating: " + err.Error(),
 		}}
@@ -441,8 +443,8 @@ func (p *Processor) ratingErr(meta map[string]any) error {
 // monbooru records an enrich it refused; a post stopped before the enrich it
 // has to be told of.
 func (p *Processor) failOnline(ctx context.Context, job, snap *queue.Job, err error) {
-	var badRating *invalidSourceRatingError
-	if errors.Is(err, errFlattened) || errors.As(err, &badRating) {
+	var refusal *sourceMetadataError
+	if errors.As(err, &refusal) {
 		p.failEnrichFetch(ctx, job, snap, err)
 		return
 	}
@@ -1135,9 +1137,18 @@ func (p *Processor) processCBZ(ctx context.Context, job *queue.Job, itemIdx int,
 		failItem(job, itemIdx, outcome.ErrCodeDownloadFailed, fmt.Sprintf("bundled %d of %d pages", len(pages), total))
 		return
 	}
-	// A pool or book aggregates several posts; one invalid source rating
-	// must never be hidden by a valid rating from a different page.
+	// A bundle can only use the combined metadata after every page passes.
 	for _, d := range downloaded {
+		if err := p.enrichTaxonomy(ctx, d.Meta); err != nil {
+			if ctx.Err() == nil {
+				failItem(job, itemIdx, errorCode(err), err.Error())
+			}
+			return
+		}
+		if err := p.flattenedErr(d.Meta); err != nil {
+			failItem(job, itemIdx, errorCode(err), err.Error())
+			return
+		}
 		if err := p.ratingErr(d.Meta); err != nil {
 			failItem(job, itemIdx, errorCode(err), err.Error())
 			return
