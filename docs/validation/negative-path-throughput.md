@@ -1,6 +1,6 @@
 # Negative-path integrity and bounded throughput acceptance
 
-Status (2026-11-13): **expanded negative-path/mixed-batch tests passed Go race+vet CI** ([run 43356175480](https://github.com/jwebb7847-ui/meloader/actions/runs/43356175480), test code at `85c2d2e`, validation doc at `aa25f70`). **positive Derpibooru -> running Mebooru Audit_A import fully passed**; image ID 7 retained its file, source, `rating:general`, and all 19 image-specific tags. The reverse Mebooru -> Meloader authenticated link was repaired by correcting the local API port. The initial e621 attempt encountered a peer connection reset. A later [live e621 result](e621.md#live-e621-import--2026-11-13) passed after a network-path change.
+Status (2026-11-13): **Item 3 live acceptance is complete** for the approved scope. The expanded negative-path and mixed-batch tests passed [Go race tests and vet](https://github.com/jwebb7847-ui/meloader/actions/runs/43356175480). The live audit verified [Derpibooru](#7-post-merge-derpibooru-upgrade-smoke-test), [Safebooru](#safebooru-live-end-to-end-acceptance--passed-2026-11-13), [e621](e621.md#live-e621-import--2026-11-13), and [Danbooru](#8-live-danbooru-acceptance) in `Audit_A`.
 
 This record covers hermetic tests, synthetic benchmarks, and opt-in imports into `Audit_A`. See the [local audit runbook](local-audit.md) for the current service setup.
 
@@ -82,6 +82,8 @@ B/op means **total allocated bytes during the synthetic batch**, not resident or
 
 ## 3. Alternate live booru: Danbooru (if accessible)
 
+The following records the initial preflight and the Safebooru comparison. See the [successful authenticated Danbooru run](#8-live-danbooru-acceptance) for the final result.
+
 Rather than repeatedly retrying e621 after its connection reset, use the upstream gallery-dl v1.32.19 fixture `https://danbooru.donmai.us/posts/294929`. Its pinned fixture declares `rating: "s"`, which means **sensitive** in the Danbooru family, not e621's **safe**. Its source tags include artist, character, copyright, meta and general fields. This makes it a stronger cross-family rating/tag test than another Derpibooru post.
 
 **Metadata-only preflight** (one post, no media download):
@@ -155,7 +157,7 @@ The operator reran **one** metadata-only Derpibooru request for previously valid
 
 The previously saved **Safebooru** metadata-only payload was also `Message.Directory=1, Message.Url=1`, **one** distinct post `1169132`, native rating field `s`, **9** flat tags, and categorized fields `tags_artist`, `tags_character`, `tags_copyright`, `tags_general`, `tags_metadata`. Therefore its earlier `Expected exactly one post` was purely a faulty test parser counting two messages for one post. It was **a successful live extractor test**, with no image imported yet. Its `gelbooru_v02` family maps native `s` to `rating:general`, and the mapper maps `tags_metadata` to Mebooru's `meta`.
 
-**e621** and **Danbooru** each had exactly one embedded `HttpError`, zero post metadata and the same connection reset: `ConnectionError: ('Connection aborted.', ConnectionResetError(54, 'Connection reset by peer'))`. Neither error establishes which peer or intermediary caused the reset. The working boorus make a general network outage or universally broken gallery-dl install unlikely. Leave those two sources deferred rather than repeatedly retrying.
+**e621** and **Danbooru** each had exactly one embedded `HttpError`, zero post metadata and the same connection reset: `ConnectionError: ('Connection aborted.', ConnectionResetError(54, 'Connection reset by peer'))`. Neither error establishes which peer or intermediary caused the reset. The working boorus make a general network outage or universally broken gallery-dl install unlikely. The later [e621](e621.md#live-e621-import--2026-11-13) and [Danbooru](#8-live-danbooru-acceptance) runs passed.
 
 A follow-up **test-only regression** covers Safebooru's string-valued categorized fields and native `s` rating at the pipeline-to-mock-HTTP upload boundary. See `internal/pipeline/rating_upload_integration_test.go`, case `safebooru real extractor shape with categorized string fields`. This does **not** change runtime behavior.
 
@@ -183,7 +185,7 @@ The operator submitted one post through the **running Meloader audit UI**:
 - Preceding saved metadata validation showed `s` and string-valued `tags_artist`, `tags_character`, `tags_copyright`, `tags_general`, `tags_metadata`; their correct category persistence and `s -> rating:general` are now demonstrated against the **real Mebooru HTTP/API + on-disk library**, not just the mock.
 - Preliminary media HEAD `Content-Length: 247882` bytes matches the image-size displayed (~242.1 KiB); HEAD was advisory, not enforced by the downloader.
 
-**Result:** The second independent acquisition family, Safebooru/Gelbooru-v02, has **passed full positive end-to-end acceptance**, following the earlier Derpibooru/Philomena pass. **Not** yet proved: repeated/multi-post real workload throughput, all source-rating variants, live invalid-rating rejection against a running Mebooru (the mock-HTTP negative tests do pass), or e621/Danbooru network transport access.
+**Result:** The second independent acquisition family, Safebooru/Gelbooru-v02, has **passed full positive end-to-end acceptance**, following the earlier Derpibooru/Philomena pass. **Not** yet proved: repeated/multi-post real workload throughput, all source-rating variants, live invalid-rating rejection against a running Mebooru (the mock-HTTP negative tests do pass), or e621/Danbooru network access at that point in the audit. Later results are recorded above and in the acceptance checklist.
 
 ### Bounded five-post Safebooru audit — download/upload PASS, tag warning investigated
 
@@ -302,6 +304,16 @@ On 2026-11-13, the operator ran the merged Meloader build (`3aa5aca`, PR #5) wit
 
 After restart, tracing Derpibooru post `3796956` previewed **19 tags**, showed `safe` mapping to `rating:general`, and populated the `Audit_A` resolution column. The operator confirmed all 19 rows. Meloader logged successful taxonomy enrichment and no taxonomy HTTP request for that trace, confirming cache reuse after restart.
 
+## 8. Live Danbooru acceptance
+
+**PASSED on 2026-11-13** on the Mac audit pair using the Main Upgrade state and gallery-dl `1.32.19`. Meloader was last observed at `0b7ff78`, whose tree matches the Item 4 merge at `18edb38`. The exact running Mebooru SHA was not recorded.
+
+1. The initial Meloader trace of Danbooru post `294929` returned a Cloudflare challenge (`403 Forbidden`) on the JSON endpoint. The operator configured the documented Danbooru API login in Meloader and retried the trace. It previewed **36 tags** in `Audit_A` and showed native `s` mapping to `rating:sensitive`.
+2. The operator submitted the same direct post URL. The Meloader queue reported **succeeded**, **1 created** in `Audit_A`, and **36 tags sent** for post `294929`.
+3. Mebooru image **11** in `Audit_A` shows `rating:sensitive`, Artist (`bonocho`), Character, Copyright, Meta, and General tags, Danbooru source membership, separate `i.pximg.net` original attribution, and source commentary. The queue shows the requested post URL. The image-detail screenshot shows the source entry but does not expose its link target or every persisted tag.
+
+This closes the single-post Danbooru acceptance check. The 36-tag count describes the preview and submitted tags.
+
 ## Acceptance checklist and deferred work
 
 - [x] Positive Derpibooru source -> Mebooru Audit_A -> per-image metadata, tags and original source persisted
@@ -311,7 +323,7 @@ After restart, tracing Derpibooru post `3796956` previewed **19 tags**, showed `
 - [x] Execute local Apple M5 loopback HTTP benchmark: median 20=2,118 posts/s, 200=6,130 posts/s, 1,000=5,840 posts/s; synthetic 16-KiB files and mock Mebooru only
 - [x] Metadata-only source contrast: Derpibooru original and retest consistent, Safebooru post 1169132 confirmed as a single post with native `s` and five categorized tag fields; the initial e621 and Danbooru probes encountered connection resets
 - [x] Safebooru image HEAD preflight passed with verified curl TLS, `image/jpeg`, `247882` bytes (0.24 MiB); Python 3.12's own default CA-file lookup was unresolved and its urllib HEAD failed certificate verification
-- [x] One live alternate-family Safebooru/Gelbooru-v02 post imported to Audit_A with `rating:general`, all 10 categorized per-image tags and source provenance (Mebooru ID 8); Danbooru-specific live rating `s -> sensitive` remains unverified due to transport reset
+- [x] One live alternate-family Safebooru/Gelbooru-v02 post imported to Audit_A with `rating:general`, all 10 categorized per-image tags and source provenance (Mebooru ID 8)
 - [x] Five-post Safebooru acquisition and spot-checked metadata persistence accepted: all 5 created, ~12 s wall-time, 207 tags submitted, exact `...` validator warning intentionally rejected; Audit_A image IDs 9 and 11 confirm rating/category/source preservation
 - [x] Bounded 20-position workload and full 20-new-image continuation accepted and timed; source metadata spot-checked in the first window
 - [x] Malformed-rating test against the running local Audit_A server passed: one rejected item, one upload attempt and one SHA-256-verified control
@@ -319,6 +331,6 @@ After restart, tracing Derpibooru post `3796956` previewed **19 tags**, showed `
 - [x] Post-merge Derpibooru smoke test passed for five live imports, queue history reload and archive skips after restart
 - [x] Post-merge image metadata spot checks and taxonomy-cache reuse passed on the merged build
 - [x] Live e621 trace and import passed for post `535` in `Audit_A`. See the [live e621 result](e621.md#live-e621-import--2026-11-13).
-- [ ] Danbooru live validation remains deferred after the transport reset
+- [x] [Live Danbooru trace and import](#8-live-danbooru-acceptance) passed for post `294929` in `Audit_A`, including native `s` → `rating:sensitive`, categorized tags, and original attribution
 - [x] e621 `lore → meta` and `contributor → artist` filing policy approved after [live traces](e621.md#live-lore-and-contributor-traces--2026-11-13)
 - [ ] Review additional source taxonomy decisions before changing their behavior

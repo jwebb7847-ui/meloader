@@ -7,10 +7,10 @@ Last verified by the operator on the Apple Silicon MacBook Air on 2026-11-13. Th
 | Component | Checkout and code checkpoint | Audit configuration |
 | --- | --- | --- |
 | Mebooru | `$HOME/Documents/VSC/mebooru` · `mebooru-foundation` · `fbb5232` code checkpoint | `$HOME/Library/Application Support/Mebooru Audit/monbooru.toml` · `127.0.0.1:8455` |
-| Meloader | `$HOME/Documents/VSC/meloader-rating-qa` · detached at merged `main` commit `3aa5aca` during the upgrade audit | `$HOME/Library/Application Support/Monloader Audit Main Upgrade/monloader.toml` · `127.0.0.1:8456` |
+| Meloader | `$HOME/Documents/VSC/meloader-item4-qa` · detached at `0b7ff78`, the same code as merge `18edb38` | `$HOME/Library/Application Support/Monloader Audit Main Upgrade/monloader.toml` · `127.0.0.1:8456` |
 | gallery-dl | Isolated `1.32.19` executable | `$HOME/Library/Application Support/Meloader Validation/gallery-dl-1.32.19/bin/gallery-dl` |
 
-The repository Go modules declare Go 1.27.3 at these code checkpoints. The older Meloader state is in `$HOME/Library/Application Support/Monloader Audit`. Reuse the existing **Main Upgrade** copy for this audit. The two sites' upstream internal command names are still `monbooru` and `monloader`.
+The repository Go modules declare Go 1.27.3. The latest Meloader Mac audit used Go 1.27.4. The older upgrade-audit checkout is `$HOME/Documents/VSC/meloader-rating-qa` at `3aa5aca`. The older Meloader state is in `$HOME/Library/Application Support/Monloader Audit`. Reuse the existing **Main Upgrade** copy for this audit. The two sites' upstream internal command names are still `monbooru` and `monloader`.
 
 The configured Mebooru galleries include `Audit_A`, `Audit_B`, and `home`. All queue tests here target `Audit_A`. The Mebooru config is authoritative for its media and database paths. The copied audit setup isolates Meloader state and still targets the dedicated Mebooru audit gallery.
 
@@ -49,7 +49,7 @@ run_meloader_upgrade() (
   audit_copy="$HOME/Library/Application Support/Monloader Audit Main Upgrade"
   audit_gdl="$HOME/Library/Application Support/Meloader Validation/gallery-dl-1.32.19/bin/gallery-dl"
 
-  cd "$HOME/Documents/VSC/meloader-rating-qa"
+  cd "$HOME/Documents/VSC/meloader-item4-qa"
   git status --short --branch
   git rev-parse HEAD
   for audit_file in monloader.toml gallery-dl.json upgrade-archive.sqlite; do
@@ -83,6 +83,8 @@ run_meloader_upgrade
 **Browser — Meloader.** Open [127.0.0.1:8456](http://127.0.0.1:8456/) and verify that `Audit_A` is selected for the job. Site-specific or job-level routing can affect the destination. Use ordinary download only after confirming the destination and bound.
 
 **Browser — Mebooru.** Check that the footer reports a connection to Monloader. The forward API is Meloader → Mebooru on 8455. Mebooru's reverse `[monloader].api_url` points to `http://127.0.0.1:8456`. Use the existing pairing. A trace that reports `connection refused` for 8455 can still preview outgoing tags but has not tested the gallery's resolution. An occupied 8456 requires identifying the listener before restarting.
+
+The [authenticated Danbooru audit](negative-path-throughput.md#8-live-danbooru-acceptance) used this paired setup. Keep Danbooru credentials in the local audit configuration.
 
 ## Reproduce the upgrade smoke test
 

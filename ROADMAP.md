@@ -25,9 +25,9 @@ Keep the network boundary intact: Meloader is the explicitly WAN-capable acquisi
 
 ## Current work and branches
 
-- **Meloader `main`** contains Items 1–3. [PR #5](https://github.com/jwebb7847-ui/meloader/pull/5) merged the stacked taxonomy and source-semantics work at `3aa5aca`. [Go race tests and vet passed](https://github.com/jwebb7847-ui/meloader/actions/runs/43376956502) on the merge. Earlier branches and draft PRs #1–#4 document the development history.
+- **Meloader `main`** contains Items 1–3 and the first Item 4 fixes. [PR #5](https://github.com/jwebb7847-ui/meloader/pull/5) merged the stacked taxonomy and source-semantics work at `3aa5aca`. [PR #6](https://github.com/jwebb7847-ui/meloader/pull/6) merged the Derpibooru integrity fixes at `18edb38` after Mac validation. PRs #1–#4 record the earlier stacked reviews.
 - **Mebooru `mebooru-foundation`** contains the fork's library UI work. Its `main` remains the upstream-derived v1.24.0 baseline. See [MEBOORU.md](https://github.com/jwebb7847-ui/mebooru/blob/mebooru-foundation/MEBOORU.md) for the library's direction and baseline.
-- **Next milestone: Item 4.** Begin with Derpibooru taxonomy edge cases.
+- **Next milestone: Item 4.** Resolve the remaining taxonomy and source-adapter decisions.
 
 ## Milestones
 
@@ -42,16 +42,16 @@ Recover authoritative categories when gallery-dl emits flattened tags. Use the s
 - After merging, a copied-state Derpibooru audit created five images, preserved ratings, categories and source links, restored queue history after restart, reused the taxonomy cache, and skipped all five on replay through the download archive. [Upgrade smoke test](docs/validation/negative-path-throughput.md#7-post-merge-derpibooru-upgrade-smoke-test)
 - Larger end-to-end tests at 200, 1,000 and 10,000 images remain deferred. Measure time to first import, throughput, added HTTP requests, peak memory/goroutines and failures before making bulk performance claims. Use the separate synthetic results only as local processing baselines.
 
-### 3. Generalized source adapters — merged and accepted for approved scope
+### 3. Generalized source adapters — complete
 
 - Optional enrichment and warming preserve generic profile support. Keep the registry in `internal/taxonomy` until a broader contract requires a move.
 - Approved rating and taxonomy semantics preserve source authority and valid user filing overrides. Invalid required metadata fails visibly. Relevant download, refresh, lookup, replacement and bundle paths enforce the policy. Known-source ratings use the shipped family rules; a blank Philomena rating field can use the source rating tag. Bundles check each page after enrichment and before archive creation. [Approved contract](docs/architecture/source-semantics-proposal.md#product-decisions) · [Rating and malformed-input tests](docs/validation/rating-integrity.md)
 - e621 categorized extraction, preview and one live import passed with the generic mapper. Retain **`lore → meta` and `contributor → artist`**. [e621 validation and decision](docs/validation/e621.md)
-- Danbooru automated coverage passed. Live confirmation remains deferred after a metadata transport reset. Resume only if relevant to a specific source question or when reachability makes a bounded check practical.
+- Danbooru automated coverage and authenticated live acceptance passed. Post `294929` mapped `s` to `rating:sensitive` and imported into `Audit_A` with categorized tags and original attribution. [Live Danbooru result](docs/validation/negative-path-throughput.md#8-live-danbooru-acceptance)
 
 ### 4. Further booru coverage — next
 
-Start by auditing Derpibooru taxonomy edge cases against the current `main` implementation and existing fixtures. Look for gaps around aliases and canonical names, unusual namespaces and original characters, source IDs and provenance, and valid general tags versus absent, malformed, or temporarily unavailable taxonomy. For each gap, identify the current behavior and propose the expected result with a targeted fixture or metadata-only probe. Discuss filing, trust and fallback decisions before changing their behavior. Preserve taxonomy fidelity and use request counts and cache behavior to catch regressions. Add source-specific capabilities only when a proven gap requires them.
+[PR #6](https://github.com/jwebb7847-ui/meloader/pull/6) shipped the approved trust and fallback fixes for malformed taxonomy, tag ID verification, and canonical post provenance. The Mac audit confirmed a live import and cache reuse after restart. Remaining decisions cover verified aliases, unusual namespaces, named original characters, and when to evaluate category-qualified blacklist rules. Discuss filing and rule behavior before implementation. Use targeted fixtures or metadata-only probes, and check request counts and cache behavior for regressions.
 
 ### 5. Meloader / Mebooru user integration
 

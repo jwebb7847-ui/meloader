@@ -1,6 +1,6 @@
 # Item 3B — Source semantics contract (proposal)
 
-**Status (2026-11-13).** The approved Item 3 behavior shipped in [PR #5](https://github.com/jwebb7847-ui/meloader/pull/5) on `main`. The approved scope covers rating integrity, source authority with user-controlled filing, and visible refusal when required taxonomy is unavailable or invalid. The [e621 filing decision](../validation/e621.md#live-lore-and-contributor-traces--2026-11-13) retains the current mapper rules. Category fidelity for other mappings and raw metadata retention remain open.
+**Status (2026-11-13).** The approved Item 3 behavior shipped in [PR #5](https://github.com/jwebb7847-ui/meloader/pull/5) on `main`. The approved scope covers rating integrity, source authority with user-controlled filing, and visible refusal when required taxonomy is unavailable or invalid. The [e621 filing decision](../validation/e621.md#live-lore-and-contributor-traces--2026-11-13) retains the current mapper rules. [Live Danbooru acceptance](../validation/negative-path-throughput.md#8-live-danbooru-acceptance) verified native `s` → `rating:sensitive` and categorized tags in `Audit_A`. Category fidelity for other mappings and raw metadata retention remain open.
 
 **Original proposal reviewed against:** Meloader `meloader-item3-e621-validation` at `67685c8`, including `internal/taxonomy/registry.go`, `internal/taxonomy/derpibooru.go`, `internal/mapping/map.go`, and `internal/pipeline/processor.go`; source-side expectations validated with pinned gallery-dl v1.32.19. See [ROADMAP.md](../../ROADMAP.md).
 

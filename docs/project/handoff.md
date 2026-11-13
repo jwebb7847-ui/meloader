@@ -15,7 +15,7 @@ Status reviewed 2026-11-13.
 
 ## Repository state
 
-- [Meloader](https://github.com/jwebb7847-ui/meloader) develops from `main`. [PR #5](https://github.com/jwebb7847-ui/meloader/pull/5) merged Item 3 at `3aa5aca`. The post-merge Mac audit ran against that code. Later documentation records e621 acceptance and approval of `lore → meta` and `contributor → artist`. Earlier stacked branches and draft PRs are historical references.
+- [Meloader](https://github.com/jwebb7847-ui/meloader) develops from `main`. [PR #5](https://github.com/jwebb7847-ui/meloader/pull/5) merged Item 3 at `3aa5aca`. Live e621 and Danbooru acceptance are complete. [PR #6](https://github.com/jwebb7847-ui/meloader/pull/6) merged the first Item 4 fixes at `18edb38`. The latest Mac audit used the identical code at `0b7ff78`.
 - [Mebooru](https://github.com/jwebb7847-ui/mebooru) has its gallery-switching and branding work on `mebooru-foundation` (last code checkpoint `fbb5232`). Its `main` remains at the upstream-derived v1.24.0 baseline (`0ac84b9`). Fetch the correct fork and inspect the current branch head before making changes in either repo.
 - The runbook describes the last observed MacBook Air audit setup. Check the local commit, listeners, and explicit config paths before relying on a running instance. GitHub changes do not restart local apps.
 
@@ -35,4 +35,4 @@ Source taxonomy answers what a source says a tag means. Cross-source synonyms an
 
 ## Resume here
 
-Start [Item 4](../../ROADMAP.md#4-further-booru-coverage--next) with a bounded Derpibooru taxonomy edge-case review. Read the current implementation and tests, identify gaps, and propose specific fixtures with expected outcomes. Cover aliases or canonical names, unusual namespaces or original-character tags, source identity/provenance, and the distinction between valid general tags and missing or invalid taxonomy. Use targeted metadata-only probes when fixtures need real evidence. Surface any filing or fallback policy choice before changing behavior. Item 3 is complete for the approved scope. Danbooru live acceptance and larger end-to-end benchmarks remain deferred. Acquisition-tab design follows under Item 5.
+Resume [Item 4](../../ROADMAP.md#4-further-booru-coverage--next) with the remaining Derpibooru decisions on aliases, unusual namespaces, named original characters, and category-qualified blacklist timing. The trust and fallback fixes are merged. Discuss the [open architecture decisions](../../ROADMAP.md#known-open-decisions) before extending the adapter contract. Item 3 is complete, including [live Danbooru acceptance](../validation/negative-path-throughput.md#8-live-danbooru-acceptance). Larger end-to-end benchmarks remain deferred. Acquisition-tab design follows under Item 5.
