@@ -439,8 +439,9 @@ func (m *Mapper) eachTag(category string, profile Profile, meta map[string]any, 
 	if flat {
 		// A flat tag list lands as general, except entries with a recognized
 		// namespace prefix (zerochan's "Character:name", philomena boorus).
+		philomena := m.sourceRatingProfile(category, profile).Family == FamilyPhilomena
 		for _, name := range parseTagField(flatTags(meta)) {
-			if profile.Family == FamilyPhilomena && philomenaRatingTag(name) {
+			if philomena && philomenaRatingTag(name) {
 				continue // lifted to the rating field below, not a content tag
 			}
 			key, base, sub := "general", "general", name
@@ -477,22 +478,26 @@ func (m *Mapper) fileTag(site string, profile Profile, field, listed, key, base,
 }
 
 func (m *Mapper) postRating(category string, profile Profile, meta map[string]any) string {
-	return m.ratingFor(category, profile, listedRating(profile, meta))
+	return m.ratingFor(category, profile, m.listedRating(category, profile, meta))
 }
 
-func listedRating(profile Profile, meta map[string]any) string {
-	// Philomena boorus carry no rating field; the rating is a tag.
-	raw := kwdict.String(meta, "rating")
-	if raw == "" && profile.Family == FamilyPhilomena {
-		raw = philomenaRating(meta)
+func (m *Mapper) listedRating(site string, profile Profile, meta map[string]any) string {
+	raw := sourceRatingField(meta)
+	if raw != "" {
+		return raw
 	}
-	if raw == "" {
-		// civitai's numeric nsfwLevel means nothing until a profile's
-		// rating overrides name each level.
-		file, _ := meta["file"].(map[string]any)
-		raw = kwdict.String(file, "nsfwLevel")
+	// Philomena normally carries the rating as a tag. Rated booru families
+	// use their own rating evidence and defaults.
+	source := m.sourceRatingProfile(site, profile)
+	if source.Family == FamilyPhilomena {
+		return philomenaRating(meta)
 	}
-	return raw
+	if requiresSourceRating(source.Family) {
+		return ""
+	}
+	// Civitai's numeric nsfwLevel is interpreted by profile overrides.
+	file, _ := meta["file"].(map[string]any)
+	return strings.TrimSpace(kwdict.String(file, "nsfwLevel"))
 }
 
 func categoryDropped(drop []string, tag string) bool { return droppedCategory(drop, tag) != "" }
@@ -778,20 +783,20 @@ func (m *Mapper) ActiveOverrides(site string) (tags []config.TagOverride, rating
 }
 
 func (m *Mapper) ratingFor(site string, profile Profile, raw string) string {
+	raw = strings.TrimSpace(raw)
 	for _, o := range m.cfg.Current().RatingOverrides {
-		if o.Site == site && strings.EqualFold(o.From, strings.TrimSpace(raw)) && validRatings[o.To] {
+		if o.Site == site && strings.EqualFold(o.From, raw) && validRatings[o.To] {
 			return o.To
 		}
 	}
-	for from, to := range profile.RatingOverrides {
-		if strings.EqualFold(from, strings.TrimSpace(raw)) {
-			return to
-		}
+	if rating := ratingOverride(profile.RatingOverrides, raw); rating != "" {
+		return rating
 	}
-	if r := mapRating(profile.Family, raw); r != "" {
-		return r
+	source := m.sourceRatingProfile(site, profile)
+	if rating := sourceRating(source, raw); rating != "" {
+		return rating
 	}
-	return profile.DefaultRating
+	return cmp.Or(profile.DefaultRating, source.DefaultRating)
 }
 
 const FlattenedTagsMsg = "the post came with no usable per-category tags - the site's page or gallery-dl's tag fields may have changed, so nothing was sent"

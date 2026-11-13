@@ -75,6 +75,101 @@ func TestValidateSourceRatingDoesNotLetUserOverrideLegitimizeBadSourceClaim(t *t
 	}
 }
 
+func TestKnownSourceRatingUsesShippedSemanticsWithCustomProfiles(t *testing.T) {
+	m, err := New(config.NewProvider(config.Default()), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name      string
+		site      string
+		customize func(*Profile)
+		meta      map[string]any
+		want      string
+		wantErr   string
+	}{
+		{
+			name: "changing a known site's family cannot skip validation",
+			site: "e621",
+			customize: func(p *Profile) { p.Family = FamilyGeneric },
+			meta:    map[string]any{"rating": "unknown"},
+			wantErr: "unrecognized rating",
+		},
+		{
+			name: "custom mapping cannot validate an unknown code",
+			site: "e621",
+			customize: func(p *Profile) {
+				p.RatingOverrides = map[string]string{"unknown": RatingGeneral}
+			},
+			meta:    map[string]any{"rating": "unknown"},
+			wantErr: "unrecognized rating",
+		},
+		{
+			name: "custom default cannot supply missing source evidence",
+			site: "e621",
+			customize: func(p *Profile) { p.DefaultRating = RatingGeneral },
+			meta:    map[string]any{},
+			wantErr: "none was found",
+		},
+		{
+			name: "native code still has the known family's meaning",
+			site: "danbooru",
+			customize: func(p *Profile) { p.Family = FamilyGeneric },
+			meta: map[string]any{"rating": "s"},
+			want: RatingSensitive,
+		},
+		{
+			name: "shipped site interpretation survives an edited profile",
+			site: "safebooru",
+			customize: func(p *Profile) { p.RatingOverrides = nil },
+			meta: map[string]any{"rating": "q"},
+			want: RatingGeneral,
+		},
+		{
+			name: "custom mapping still controls filing for a valid code",
+			site: "e621",
+			customize: func(p *Profile) {
+				p.RatingOverrides = map[string]string{"s": RatingSensitive}
+			},
+			meta: map[string]any{"rating": "s"},
+			want: RatingSensitive,
+		},
+		{
+			name: "blank Philomena field falls back to the source tag",
+			site: "derpibooru",
+			customize: func(p *Profile) { p.Family = FamilyGeneric },
+			meta: map[string]any{"rating": " \t", "tags": []string{" explicit "}},
+			want: RatingExplicit,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			profile, ok := m.BuiltinProfile(tc.site)
+			if !ok {
+				t.Fatalf("missing shipped profile for %s", tc.site)
+			}
+			tc.customize(&profile)
+			if err := m.SaveUserProfile(tc.site, profile); err != nil {
+				t.Fatal(err)
+			}
+
+			tc.meta["category"] = tc.site
+			err := m.ValidateSourceRating(tc.meta)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("validation = %v, want %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := m.Map(tc.meta).Rating; got != tc.want {
+				t.Fatalf("mapped rating = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
 
 func TestTraceReportsRatingIntegrityRefusal(t *testing.T) {
 	m, err := New(config.NewProvider(config.Default()), "")

@@ -47,7 +47,7 @@ func (m *Mapper) Trace(meta map[string]any) PostTrace {
 	profile := m.profileFor(category)
 	drop := m.cfg.Current().Tags.DropCategories
 	mapped := m.Map(meta)
-	t := PostTrace{Site: category, PostURL: m.PostURL(meta), RatingListed: listedRating(profile, meta), Tags: mapped.Tags, Warnings: mapped.UnknownTargets}
+	t := PostTrace{Site: category, PostURL: m.PostURL(meta), RatingListed: m.listedRating(category, profile, meta), Tags: mapped.Tags, Warnings: mapped.UnknownTargets}
 
 	var tags []postTag
 	row := func(r TraceRow, spellings []string) {

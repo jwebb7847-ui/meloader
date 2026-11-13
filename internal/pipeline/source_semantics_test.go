@@ -148,3 +148,40 @@ func TestBundleRejectsFlatOnlyPageBeforeBuilding(t *testing.T) {
 		t.Fatalf("bundle built before taxonomy validation: stat error=%v", err)
 	}
 }
+
+func TestBundleSkipsWhenAnEnrichedPageMatchesBlacklist(t *testing.T) {
+	cfg := config.Default()
+	cfg.Tags.Blacklist = []string{"character:twilight_sparkle"}
+	provider := config.NewProvider(cfg)
+	mapper, err := mapping.New(provider, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &Processor{mapper: mapper, cfg: provider,
+		taxonomy: taxonomyEnrichFunc(func(_ context.Context, meta map[string]any) error {
+			if meta["id"] == "2" {
+				meta["tags"] = []string{"safe", "character:twilight sparkle"}
+			}
+			return nil
+		}),
+	}
+	job := &queue.Job{}
+	job.SetItems([]queue.Item{{Status: queue.ItemPending}})
+	dir := t.TempDir()
+	p.processCBZ(context.Background(), job, 0, []gdl.Downloaded{
+		{Path: filepath.Join(dir, "1.jpg"), Meta: map[string]any{
+			"category": "derpibooru", "id": "1", "tags": []string{"safe", "sky"},
+		}},
+		{Path: filepath.Join(dir, "2.jpg"), Meta: map[string]any{
+			"category": "derpibooru", "id": "2", "tags": []string{"safe", "twilight sparkle"},
+		}},
+	}, 2, "", dir, nil, "https://example.invalid/pool")
+
+	item := job.Snapshot().Items[0]
+	if item.Status != queue.ItemSkipped || item.Outcome != outcome.SkippedBlacklist {
+		t.Fatalf("bundle with a blacklisted page was not skipped: %+v", item)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "bundle.cbz")); !os.IsNotExist(err) {
+		t.Fatalf("bundle built before the enriched blacklist check: stat error=%v", err)
+	}
+}

@@ -116,6 +116,17 @@ func TestRatingIntegrityAtImageUploadBoundary(t *testing.T) {
 			wantTags:   []string{"rating:general"},
 		},
 		{
+			name: "philomena blank field preserves explicit rating at upload",
+			meta: map[string]any{
+				"category": "derpibooru",
+				"id":       46,
+				"rating":   " \t ",
+				"tags":     []any{"explicit", "sky"},
+			},
+			wantUpload: true,
+			wantTags:   []string{"rating:explicit", "sky"},
+		},
+		{
 			name: "safebooru built-in q rating interpretation",
 			meta: map[string]any{
 				"category": "safebooru",

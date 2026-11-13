@@ -1145,6 +1145,11 @@ func (p *Processor) processCBZ(ctx context.Context, job *queue.Job, itemIdx int,
 			}
 			return
 		}
+		if note, hit := p.mapper.Blacklisted(d.Meta); hit {
+			p.markBookBlacklisted(job, sourceURL, d.Meta)
+			skipItem(job, itemIdx, outcome.SkippedBlacklist, note)
+			return
+		}
 		if err := p.flattenedErr(d.Meta); err != nil {
 			failItem(job, itemIdx, errorCode(err), err.Error())
 			return
