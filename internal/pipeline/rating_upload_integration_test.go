@@ -234,6 +234,80 @@ func TestRatingIntegrityAtImageUploadBoundary(t *testing.T) {
 	}
 }
 
+// A malformed rating in a multi-post job must not be uploaded and must not
+// prevent neighboring valid posts from being imported. This is deliberately a
+// local mock Mebooru test, not a real site or audit gallery.
+func TestRatingIntegrityMixedBatchIsolatesBadSourceClaims(t *testing.T) {
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/images" {
+			http.Error(w, "unexpected endpoint", http.StatusNotFound)
+			return
+		}
+		requests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":101}`))
+	}))
+	defer srv.Close()
+
+	cfg := config.Default()
+	cfg.Monbooru.APIURL = srv.URL
+	cfg.Monbooru.APIToken = "local-batch-test"
+	provider := config.NewProvider(cfg)
+	mapper, err := mapping.New(provider, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &Processor{mapper: mapper, cfg: provider, client: monbooru.New(provider)}
+	job := &queue.Job{}
+	items := make([]queue.Item, 3)
+	for i := range items {
+		items[i].Status = queue.ItemPending
+	}
+	job.SetItems(items)
+
+	samples := []map[string]any{
+		{"category": "e621", "id": 301, "rating": "s",
+			"tags_character": []any{"rainbow_dash"}, "tags_general": []any{"sky"}},
+		{"category": "e621", "id": 302, "rating": "corrupt",
+			"tags_character": []any{"rainbow_dash"}},
+		{"category": "danbooru", "id": 303, "rating": "g"},
+	}
+	entries := make([]*gdl.Downloaded, len(samples))
+	for i, meta := range samples {
+		path := filepath.Join(t.TempDir(), "sample.jpg")
+		if err := os.WriteFile(path, []byte("synthetic local bytes"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		entries[i] = &gdl.Downloaded{Path: path, Meta: meta}
+	}
+	p.processItems(context.Background(), job, entries, nil,
+		"SyntheticAudit", "https://example.invalid/posts", "", nil, len(entries))
+
+	if got := requests.Load(); got != 2 {
+		t.Fatalf("unexpected upload count %d, want 2", got)
+	}
+	got := job.Snapshot().Items
+	for i, item := range got {
+		switch i {
+		case 0, 2:
+			if item.Status != queue.ItemDone || item.Outcome != outcome.Created {
+				t.Errorf("valid item %d was lost: %+v", i, item)
+			}
+		case 1:
+			if item.Status != queue.ItemFailed ||
+				item.ErrorCode != outcome.ErrCodeMappingFailed ||
+				!strings.Contains(item.Error, "source rating:") {
+				t.Errorf("corrupt item did not fail visibly: %+v", item)
+			}
+		}
+		if _, err := os.Stat(entries[i].Path); !os.IsNotExist(err) {
+			t.Errorf("scratch file for item %d remains: %v", i, err)
+		}
+	}
+}
+
 // A bundled gallery is only as safe as its least trustworthy page.
 func TestRatingIntegrityRejectsBundledGalleryBeforeUpload(t *testing.T) {
 	cfg := config.Default()
