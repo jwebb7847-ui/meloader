@@ -8,6 +8,8 @@ monloader never touches your files directly: everything goes through monbooru's 
 
 **[Documentation](https://monbooru.github.io/mondocs/addons/monloader/index.html)** · **[Install](#install)** · **[Releases](https://github.com/monbooru/monloader/releases)** · **[Changelog](CHANGELOG.md)**
 
+For fork development, start with the [project handoff](docs/project/handoff.md), [roadmap](ROADMAP.md), and [local audit runbook](docs/validation/local-audit.md).
+
 <table>
   <tr>
     <td><img src=".github/assets/add.webp" width="400"/></td>

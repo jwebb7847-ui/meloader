@@ -32,12 +32,12 @@ If `git status --short` prints anything, **stop** and inspect the changes before
 With a clean checkout:
 
 ```sh
-git switch --detach origin/meloader-item3-rating-integrity
+git switch --detach origin/main
 git rev-parse HEAD
 go test -race ./internal/mapping ./internal/pipeline -run 'TestRatingIntegrity|TestRatingErr|TestValidateSourceRating|TestTraceReportsRatingIntegrityRefusal' -count=1 -v
 ```
 
-No service, network access, personal data, or Mebooru instance is required for these tests.
+The tests need no running service, private data, or source network access. Git fetch and toolchain/dependency installation may need network access.
 
 ## Controlled live-source confirmation (metadata only)
 
@@ -53,6 +53,7 @@ Run this whole block from the Meloader validation terminal; it leaves source and
 AUDIT="$HOME/Library/Application Support/Monloader Audit"
 GDL=""
 for candidate in \
+  "$HOME/Library/Application Support/Meloader Validation/gallery-dl-1.32.19/bin/gallery-dl" \
   "$AUDIT/gallery-dl/venv/bin/gallery-dl" \
   "$AUDIT/gallery-dl/gallery-dl" \
   "$AUDIT/gallery-dl"; do
@@ -163,29 +164,7 @@ For a separate, controlled future test, either retry once from an independently 
 
 ## Running the application from the checked-out source
 
-Only when the dedicated audit configuration is present and the usual port is free:
-
-```sh
-CFG="$HOME/Library/Application Support/Monloader Audit/monloader.toml"
-if [[ ! -f "$CFG" ]]; then
-  echo "Missing audit config — do not start with defaults"
-else
-  echo "Audit config exists"
-fi
-lsof -nP -iTCP:8456 -sTCP:LISTEN
-```
-
-If the port is in use, **identify the old process and stop only the known audit instance** before launching another. Then, in a terminal in the Meloader worktree:
-
-```sh
-if [[ -f "$CFG" ]]; then
-  go run ./cmd/monloader -config "$CFG"
-else
-  echo "Aborting: missing audit configuration"
-fi
-```
-
-Stop it with Ctrl+C. Do not use an older compiled binary or kill an unknown process just because it owns port 8456. Running the application is not necessary for the Go unit/integration test above; and to test a real push into Mebooru we must also verify Mebooru's commit, launch command, config, gallery, and local data root.
+Use the [paired audit launch procedure](local-audit.md#launch-the-paired-audit-services). The evidence below records the earlier config and code used in each experiment. Verify the effective destination is `Audit_A` before any real import.
 
 ## Live positive acceptance — Derpibooru to Mebooru (2026-11-13)
 
@@ -209,7 +188,7 @@ Stop it with Ctrl+C. Do not use an older compiled binary or kill an unknown proc
 
 **PASSED.** In Meloader at `d68d251`, the operator traced Derpibooru post `3796956` after restarting the audit Mebooru instance on port 8455. The trace previewed **19 tags** and populated the `Audit_A` resolution column. The visible rows show `kept`, including `character:twilight_sparkle`, `species:human`, `species:pony`, and `meta:equestria_girls`. The source-tag column retained the spelling `character:twilight sparkle`, while the mapped category was `character` and the outgoing tag used an underscore. This was a preview and did not download or import the image.
 
-## Remaining gates
+## Acceptance checklist and deferred work
 
 - [x] Full Go race detector and vet on code change `16d4908`
 - [x] Real pipeline -> mock HTTP upload boundary across valid, invalid, missing, genuinely unrated and bundled cases

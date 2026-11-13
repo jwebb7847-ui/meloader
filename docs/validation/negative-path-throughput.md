@@ -2,7 +2,7 @@
 
 Status (2026-11-13): **expanded negative-path/mixed-batch tests passed Go race+vet CI** ([run 43356175480](https://github.com/jwebb7847-ui/meloader/actions/runs/43356175480), test code at `85c2d2e`, validation doc at `aa25f70`). **positive Derpibooru -> running Mebooru Audit_A import fully passed**; image ID 7 retained its file, source, `rating:general`, and all 19 image-specific tags. The reverse Mebooru -> Meloader authenticated link was repaired by correcting the local API port. The initial e621 attempt encountered a peer connection reset. A later [live e621 result](e621.md#live-e621-import--2026-11-13) passed after a network-path change.
 
-This protocol adds **test-only** coverage and measurements. It changes no behavior, configuration, routing policy, gallery contents, or source authority.
+This record covers hermetic tests, synthetic benchmarks, and opt-in imports into `Audit_A`. See the [local audit runbook](local-audit.md) for the current service setup.
 
 ## 1. Hermetic negative-path tests
 
@@ -18,24 +18,20 @@ This is a true pipeline-to-HTTP boundary test, **not** a Mebooru SQLite storage 
 
 ### Local rerun without disturbing running services
 
-Because the Meloader `meloader-e621-validation` checkout may still be running the live audit service, create a **separate detached QA worktree** rather than switching its files out from underneath the process. These commands never start or stop either server:
+**VS Code — Meloader terminal.** Use a separate clean QA worktree with the intended revision. If the existing QA checkout is serving the audit, create an unused sibling worktree from the same clone for these checks.
 
 ```sh
-SOURCE="$HOME/Documents/VSC/meloader-e621-validation"
-QA="$HOME/Documents/VSC/meloader-rating-qa"
+SOURCE="$HOME/Documents/VSC/meloader-rating-qa"
+QA="$HOME/Documents/VSC/meloader-offline-qa"
 
-git -C "$SOURCE" fetch origin --prune
-if [[ -e "$QA" ]]; then
-  echo "STOP: QA path already exists; inspect it before reusing or replacing."
-else
-  git -C "$SOURCE" worktree add --detach "$QA" origin/meloader-item3-rating-integrity
-fi
+git -C "$SOURCE" fetch origin &&
+  git -C "$SOURCE" worktree add --detach "$QA" origin/main
 ```
 
 After successfully creating the QA worktree:
 
 ```sh
-cd "$HOME/Documents/VSC/meloader-rating-qa"
+cd "$HOME/Documents/VSC/meloader-offline-qa"
 git rev-parse --short HEAD
 git status --short
 
@@ -167,7 +163,7 @@ A follow-up **test-only regression** covers Safebooru's string-valued categorize
 
 **Safebooru header-only size probe (2026-11-13) — PASSED via verified curl:** Standalone Python 3.12 (`/Library/Frameworks/Python.framework/Versions/3.12/bin/python3`, OpenSSL 3.0.16) reported `ssl.get_default_verify_paths().cafile` unresolved; its three `urllib.request` HEAD attempts failed with `SSLCertVerificationError` before an HTTP response. A separate **default-verification macOS curl HEAD** against the saved `Message.Url` for post `1169132` returned **HTTP/2 200**, **`Content-Type: image/jpeg`**, **`Content-Length: 247882` bytes (0.24 MiB)**, under the 10 MiB audit threshold, without downloading media. Safebooru's preflight is now complete: `Audit_A` routing, source ID, rating, categorized tags, and advertised media size verified. The Python trust failure is environment-specific evidence, not proof of any remote certificate defect; investigate only if Python-based direct access is required. Do not use insecure TLS overrides. HEAD size is an advisory report, **not** an enforced byte cap during a future download. **Next step:** one Meloader UI import to `Audit_A`, up to 1 item, inspect per-image categories and `rating:general` in Mebooru; do not claim successful upload until observed.
 
-**Next acceptance gate:** confirm the configured `safebooru` site gallery override (if any) resolves to `Audit_A`; verify saved post `1169132` has the exact expected identity, `s` rating, nonempty categorized fields, and acceptable media size before importing **one** post in Meloader. Check the resulting image's own detail sidebar and source afterward. Meloader's managed configuration already enables `tags: true` for gelbooru_v02-family sites via `internal/gdl/config.go`.
+**Pre-import check used in this run:** confirm the configured `safebooru` site gallery override (if any) resolves to `Audit_A`; verify saved post `1169132` has the exact expected identity, `s` rating, nonempty categorized fields, and acceptable media size before importing **one** post in Meloader. Check the resulting image's own detail sidebar and source afterward. Meloader's managed configuration already enables `tags: true` for gelbooru_v02-family sites via `internal/gdl/config.go`.
 
 **Routing guard:** before any Danbooru import, check that Meloader's `[monbooru].default_gallery` plus any `[[sites]]` override for `danbooru` resolves to **Audit_A**, not `home` or `Audit_B`. The existing successful Derpibooru override check does *not* prove Danbooru's routing.
 
@@ -189,7 +185,7 @@ The operator submitted one post through the **running Meloader audit UI**:
 
 **Result:** The second independent acquisition family, Safebooru/Gelbooru-v02, has **passed full positive end-to-end acceptance**, following the earlier Derpibooru/Philomena pass. **Not** yet proved: repeated/multi-post real workload throughput, all source-rating variants, live invalid-rating rejection against a running Mebooru (the mock-HTTP negative tests do pass), or e621/Danbooru network transport access.
 
-### Bounded five-post Safebooru audit — download/upload PASS, one tag warning pending
+### Bounded five-post Safebooru audit — download/upload PASS, tag warning investigated
 
 User ran Meloader's **`up to 5`** queue submission for `https://safebooru.org/index.php?page=post&s=list&tags=all` to **`Audit_A`** on 2026-11-13. Screenshot of expanded queue confirms **`succeeded`**, **`5 created`**, **`more available`**, five item rows, zero apparent failures/skips, and no change to gallery routing.
 
@@ -205,7 +201,7 @@ Total **207 tags reported sent**. Important: `TagsSent` is assigned from **`len(
 
 Operator stopwatch estimate: **~12 seconds click-to-finish** (about **10–11 seconds from first downloading status**). This corresponds to ~0.42 posts/sec or **25 successfully created images/minute** for this *one five-post job*, with wall-time measurement uncertainty. Do **not** extrapolate to sustained rate, assume no server-side throttling, or compare directly to the synthetic localhost HTTP benchmark. Additional source-dependent metadata requests, image sizes and tag counts were not measured.
 
-**Next gate:** hover `1 tag warning` or the adjacent truncated text in Meloader UI to obtain the exact warning (the `[debug]` button **re-runs an extractor** and is not needed); inspect image-specific persisted tags/rating in Mebooru for `7303986` and at least one clean companion item. If the warning is the deliberate rejection of `...` and other metadata checks pass, advance to a **bounded 20-post** real workflow as a separate test.
+**Follow-up used in this run:** hover `1 tag warning` or the adjacent truncated text in Meloader UI to obtain the exact warning (the `[debug]` button **re-runs an extractor** and is not needed); inspect image-specific persisted tags/rating in Mebooru for `7303986` and at least one clean companion item. If the warning is the deliberate rejection of `...` and other metadata checks pass, advance to a **bounded 20-post** real workflow as a separate test.
 
 ### Five-post metadata acceptance follow-up — PASSED
 
@@ -306,7 +302,7 @@ On 2026-11-13, the operator ran the merged Meloader build (`3aa5aca`, PR #5) wit
 
 After restart, tracing Derpibooru post `3796956` previewed **19 tags**, showed `safe` mapping to `rating:general`, and populated the `Audit_A` resolution column. The operator confirmed all 19 rows. Meloader logged successful taxonomy enrichment and no taxonomy HTTP request for that trace, confirming cache reuse after restart.
 
-## Remaining acceptance gates
+## Acceptance checklist and deferred work
 
 - [x] Positive Derpibooru source -> Mebooru Audit_A -> per-image metadata, tags and original source persisted
 - [x] Reverse Mebooru -> Meloader authenticated health restored with existing bearer token
