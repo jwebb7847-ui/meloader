@@ -52,6 +52,9 @@ Cache persistence, batch lookup, in-flight deduplication, retry/error handling, 
 - [ ] Extend only source-specific capabilities actually needed: taxonomy, rating interpretation, canonical identity/URL, integrity validation, optional enrichment and declared capabilities.
 - [ ] Preserve profile/user mapping behavior and the existing Mebooru metadata contract.
 - [ ] Test with a second source whose metadata model differs materially from Derpibooru.
+  - **e621 selected:** gallery-dl 1.32.0+ emits authoritative `tags_artist`, `tags_character`, `tags_species` and other categorized fields alongside a flattened `tags` list. The existing profile/mapper should consume the categorized data locally; **do not add a dedicated e621 taxonomy adapter unless testing reveals a specific need**.
+  - In-progress validation branch: `meloader-item3-e621-validation` (synthetic extractor-shaped fixture; local category/identity/rating/blacklist/override tests; local-only throughput benchmark). Passing Go CI and live extractor confirmation are separate acceptance checks.
+  - **Semantic audit flag:** the current generic category map folds e621 `lore` into `meta` and `contributor` into `artist`. These are existing behaviors, not newly approved equivalences. Discuss whether meaning is lost before changing them.
 - [ ] Measure cold/warm 200-, 1,000-, and 10,000-image workflows, including time to first import, throughput, extra HTTP requests, peak RAM/goroutines and failure rates.
 - [ ] Review potential bulk-path hotspots: concurrent cache warmers, cross-post request batching, repetitive cache snapshots, and sequential post-import blocking. **Optimize from measurements, not assumptions.**
 - [ ] Merge only after tests, performance acceptance, and any relevant conceptual approvals.
@@ -90,4 +93,4 @@ Complete invasive Monloader/Monbooru naming migration only when architecture and
 - How to represent an adapter's answer at the field level (resolved / absent / invalid) and distinguish authoritative uncertainty from a broken payload.
 - Exactly how authoritative source interpretations, profile fallbacks, user overrides and generic rules compose without changing existing trust or preferences.
 - Where to draw the contract boundary between `internal/taxonomy` and a future more general source-adapter package.
-- Which distinct second booru best stress-tests the adapter contract.
+- e621 is the selected second-source contrast. Confirm its direct categorized path and profile fallback before considering any new adapter; preserve unresolved lore/contributor category semantics for explicit discussion.
