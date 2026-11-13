@@ -183,6 +183,9 @@ func (p *Processor) enrichAllOnline(ctx context.Context, job, snap *queue.Job, m
 		if err := p.flattenedErr(meta); err != nil {
 			return nil, url, site, err
 		}
+		if err := p.ratingErr(meta); err != nil {
+			return nil, url, site, err
+		}
 		payload, warnings := p.mapEnrichPayload(meta, url, claimedMD5(meta, snap.MD5, sim), sim)
 		res, err := p.client.EnrichImage(ctx, snap.ImageID, snap.Gallery, payload)
 		if err != nil {
