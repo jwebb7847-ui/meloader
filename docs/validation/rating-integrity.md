@@ -219,4 +219,5 @@ Stop it with Ctrl+C. Do not use an older compiled binary or kill an unknown proc
 - [x] Opt-in malformed Safebooru rating test passed against local `Audit_A`: `mapping_failed`, one upload attempt for the valid control, and SHA-256 verified by read-back
 - [ ] Review e621 `lore` and `contributor` mapping **separately**; do not conflate with rating integrity
 - [x] Bounded Safebooru end-to-end acquisition: five new images in ~12 s and 20 new images in ~35 s; see the [staged workload results](negative-path-throughput.md#bounded-20-post-safebooru-run-and-continuation--passed)
-- [ ] Compare larger workloads that exercise source taxonomy cache behavior
+- [x] [Bounded Derpibooru taxonomy cache audit](negative-path-throughput.md#macbook-air-live-result--passed-2026-11-13): all three warm cache reloads reproduced the cold pass's mapped tags with zero taxonomy HTTP attempts
+- [ ] Compare larger end-to-end workloads that exercise source taxonomy cache behavior

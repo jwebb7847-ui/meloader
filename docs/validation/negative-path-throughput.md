@@ -274,6 +274,22 @@ The cold pass uses a new empty cache path in the test's temporary directory and 
 
 Record the gallery-dl version, post IDs, distinct source tags, metadata fetch time, cache load time, enrich-and-map time, taxonomy HTTP attempts, mapped tags and cache bytes. Compare the cold enrich-and-map time to the median of the three warm passes, with cache load reported separately. The cold timing includes taxonomy HTTP and persistence. The warm passes run in the same process and the OS can cache the file. This measures the resolver and mapper sequentially. The downloader's concurrent cache warming, media transfers, time to first import and gallery storage are outside this measurement. The test uses its own cache and needs neither running audit service.
 
+### MacBook Air live result — PASSED, 2026-11-13
+
+The operator ran revision `94641eb` with gallery-dl `1.32.19`. The listing took **1.042 s** to resolve 20 posts with **193 distinct source tags**. All four passes mapped **442 tag assignments** and the saved taxonomy cache was **26,985 bytes**. All three fresh warm resolvers reproduced every post's full mapped tag list. The test checked `rating:general` and `character:rainbow_dash` on every post.
+
+| Pass | Cache load | Enrich and map | Taxonomy HTTP attempts |
+| --- | ---: | ---: | ---: |
+| Cold | 17 µs | 22.99015 s | 17 |
+| Warm 1 | 382 µs | 1.661 ms | 0 |
+| Warm 2 | 727 µs | 1.320 ms | 0 |
+| Warm 3 | 282 µs | 1.380 ms | 0 |
+| Warm median | 382 µs | 1.380 ms | 0 |
+
+The median of the three warm load-plus-processing totals was **2.043 ms**. The cold run logged **15 HTTP 200 responses and two HTTP 429 responses**. Each 429 recovered on the second attempt after roughly 10 seconds. Summed logged HTTP durations were about **2.665 s** and the retry waits accounted for about **20 s** of the cold pass. These are timings for sequential taxonomy enrichment and mapping of a fixed metadata set. The listing time is separate and full acquisition throughput remains open.
+
+Posts in listing order: `3931277 3931184 3931173 3931162 3931149 3931126 3931098 3931062 3931023 3931022 3931021 3931020 3931019 3931018 3931017 3930996 3930986 3930944 3930943 3930940`.
+
 ## Remaining acceptance gates
 
 - [x] Positive Derpibooru source -> Mebooru Audit_A -> per-image metadata, tags and original source persisted
@@ -287,6 +303,6 @@ Record the gallery-dl version, post IDs, distinct source tags, metadata fetch ti
 - [x] Five-post Safebooru acquisition and spot-checked metadata persistence accepted: all 5 created, ~12 s wall-time, 207 tags submitted, exact `...` validator warning intentionally rejected; Audit_A image IDs 9 and 11 confirm rating/category/source preservation
 - [x] Bounded 20-position workload and full 20-new-image continuation accepted and timed; source metadata spot-checked in the first window
 - [x] Malformed-rating test against the running local Audit_A server passed: one rejected item, one upload attempt and one SHA-256-verified control
-- [ ] Record the bounded live Derpibooru cold/warm taxonomy measurement
+- [x] Bounded live Derpibooru cold/warm taxonomy measurement passed: 20 posts, identical tags across all passes and zero warm taxonomy HTTP attempts
 - [ ] Live e621 categorized extractor confirmation (deferred for transport reset; do not block all other testing)
 - [ ] Source taxonomy semantic decisions beyond the approved rating-integrity distinction (discuss before changes)
