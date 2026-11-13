@@ -1,6 +1,6 @@
 # Negative-path integrity and bounded throughput acceptance
 
-Status (2026-11-13): **expanded negative-path/mixed-batch tests passed Go race+vet CI** ([run 43356175480](https://github.com/jwebb7847-ui/meloader/actions/runs/43356175480), test code at `85c2d2e`, validation doc at `aa25f70`). **positive Derpibooru -> running Mebooru Audit_A import fully passed**; image ID 7 retained its file, source, `rating:general`, and all 19 image-specific tags. The reverse Mebooru -> Meloader authenticated link was repaired by correcting the local API port. Live e621 extraction remains blocked by a peer connection reset, not a metadata regression.
+Status (2026-11-13): **expanded negative-path/mixed-batch tests passed Go race+vet CI** ([run 43356175480](https://github.com/jwebb7847-ui/meloader/actions/runs/43356175480), test code at `85c2d2e`, validation doc at `aa25f70`). **positive Derpibooru -> running Mebooru Audit_A import fully passed**; image ID 7 retained its file, source, `rating:general`, and all 19 image-specific tags. The reverse Mebooru -> Meloader authenticated link was repaired by correcting the local API port. The initial e621 attempt encountered a peer connection reset. A later [live e621 result](e621.md#live-e621-import--2026-11-13) passed after a network-path change.
 
 This protocol adds **test-only** coverage and measurements. It changes no behavior, configuration, routing policy, gallery contents, or source authority.
 
@@ -313,7 +313,7 @@ After restart, tracing Derpibooru post `3796956` previewed **19 tags**, showed `
 - [x] Expanded mixed-batch rejection and normal source-rating cases passed Go race+vet CI (run 43356175480)
 - [x] Local Apple M5 negative-path/rating tests passed in mapping and pipeline at commit `41c954b` (`go test -race`, 1.533s/1.564s)
 - [x] Execute local Apple M5 loopback HTTP benchmark: median 20=2,118 posts/s, 200=6,130 posts/s, 1,000=5,840 posts/s; synthetic 16-KiB files and mock Mebooru only
-- [x] Metadata-only source contrast: Derpibooru original and retest consistent, Safebooru post 1169132 confirmed as a single post with native `s` and five categorized tag fields; e621/Danbooru remain reset-blocked
+- [x] Metadata-only source contrast: Derpibooru original and retest consistent, Safebooru post 1169132 confirmed as a single post with native `s` and five categorized tag fields; the initial e621 and Danbooru probes encountered connection resets
 - [x] Safebooru image HEAD preflight passed with verified curl TLS, `image/jpeg`, `247882` bytes (0.24 MiB); Python 3.12's own default CA-file lookup was unresolved and its urllib HEAD failed certificate verification
 - [x] One live alternate-family Safebooru/Gelbooru-v02 post imported to Audit_A with `rating:general`, all 10 categorized per-image tags and source provenance (Mebooru ID 8); Danbooru-specific live rating `s -> sensitive` remains unverified due to transport reset
 - [x] Five-post Safebooru acquisition and spot-checked metadata persistence accepted: all 5 created, ~12 s wall-time, 207 tags submitted, exact `...` validator warning intentionally rejected; Audit_A image IDs 9 and 11 confirm rating/category/source preservation
@@ -322,5 +322,6 @@ After restart, tracing Derpibooru post `3796956` previewed **19 tags**, showed `
 - [x] Bounded live Derpibooru cold/warm taxonomy measurement passed: 20 posts, identical tags across all passes and zero warm taxonomy HTTP attempts
 - [x] Post-merge Derpibooru smoke test passed for five live imports, queue history reload and archive skips after restart
 - [x] Post-merge image metadata spot checks and taxonomy-cache reuse passed on the merged build
-- [ ] Live e621 categorized extractor confirmation (deferred for transport reset; do not block all other testing)
+- [x] Live e621 trace and import passed for post `535` in `Audit_A`. See the [live e621 result](e621.md#live-e621-import--2026-11-13).
+- [ ] Danbooru live validation remains deferred after the transport reset
 - [ ] Source taxonomy semantic decisions beyond the approved rating-integrity distinction (discuss before changes)
