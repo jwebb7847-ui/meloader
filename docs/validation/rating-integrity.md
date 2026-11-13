@@ -195,7 +195,9 @@ Stop it with Ctrl+C. Do not use an older compiled binary or kill an unknown proc
 
 **Real import operator evidence:** Meloader queue row for the same URL showed `succeeded`, `derpibooru`, gallery `Audit_A`, `1 created`; expanded item `post 3796956` showed `created`, `19 tags sent`. Mebooru's sidebar showed `general` under rating and recognizable artist, character, species, meta and general taxonomy. **Important:** sidebar counts are gallery-wide, so we still need to open the imported image's own detail view to verify its exact persisted rating, source provenance and tag categories.
 
-**Result:** positive live post acquisition -> tag/category mapping -> real Mebooru HTTP import is **successful**. Item-level persistence verification and negative control remain outstanding; e621 network blockage is independent. No production library or `home` gallery was intentionally targeted.
+**Item detail screenshot (same date):** Mebooru `Audit_A` opened image ID `7`, file `3796956.jpg`; metadata showed JPEG 774 × 1024, file size 250.7 KiB, persisted path under `~/Desktop/Audit Gallery A`, SHA-256/MD5/pHash, ingestion date, `Added via monloader`, and a `derpibooru` source entry. The source section also retained an original external link (x.com). The image renders correctly. **File/source persistence is confirmed.** The search bar at capture was `source:"derpibooru"`, so the sidebar's `general` rating and category counts describe the multi-image search result, **not proven image-specific tags**. For definitive per-image tag acceptance, search `id:7` and inspect the sidebar; Mebooru's search filter implementation supports `id` equality. The screenshot footer additionally displayed `monloader auth rejected`. Mebooru's `internal/monloader/link.go` authenticated status probe marks `ConnRejected` when its bearer-token queue read returns 401/403/503 or `setup_required`, so investigate the **Mebooru -> Meloader** link separately; the successful **Meloader -> Mebooru** upload does not prove reverse-link health.
+
+**Result:** positive live post acquisition -> tag/category mapping -> real Mebooru HTTP import is **successful**, with file/source persistence now confirmed from the image detail view. Exact item-level rating/tag persistence and reverse-auth health still need investigation; negative control remains outstanding; e621 network blockage is independent. No production library or `home` gallery was intentionally targeted.
 
 ## Remaining gates
 
@@ -203,7 +205,9 @@ Stop it with Ctrl+C. Do not use an older compiled binary or kill an unknown proc
 - [x] Real pipeline -> mock HTTP upload boundary across valid, invalid, missing, genuinely unrated and bundled cases
 - [x] Live gallery-dl **Derpibooru** metadata-only extraction: post 3796956 produced `category=derpibooru`, `id=3796956`, a `safe` rating tag and 19 source tags
 - [x] Controlled **positive** real Meloader-to-Mebooru import: single Derpibooru post 3796956 routed to disposable `Audit_A` and returned `succeeded`, `1 created`, `19 tags sent`
-- [ ] Confirm the imported item's **individual** detail view shows `rating:general`, the correct source link, and artist/character/species/meta/general category assignments; the supplied Mebooru screenshot is a **gallery-wide facet list**, which alone cannot prove the attributes belong to this specific imported item
+- [x] Confirm the imported item is individually persisted: image ID `7`, filename `3796956.jpg`, real JPEG in `Audit_A`, `Added via monloader`, source `derpibooru`, and visible image preview
+- [ ] Verify **image-specific** `rating:general` and categories by searching `id:7`; the screenshot's sidebar reports faceted results for `source:"derpibooru"` (4 images), not the individual record
+- [ ] Investigate Mebooru footer `monloader auth rejected` (reverse Mebooru -> Meloader bearer-token status probe), separately from the successful forward upload
 - [ ] Live **e621** categorized metadata extraction; pinned gallery-dl 1.32.19 encountered a peer connection reset, not a source-mapping failure
 - [ ] Controlled real **negative** source-rating refusal with a safely isolated test setup if needed; invalid/missing known-booru ratings have already passed real-pipeline-to-mock-HTTP no-upload tests
 - [ ] Review e621 `lore` and `contributor` mapping **separately**; do not conflate with rating integrity
