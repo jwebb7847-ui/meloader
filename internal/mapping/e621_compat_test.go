@@ -2,8 +2,8 @@ package mapping
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"maps"
 	"reflect"
 	"slices"
 	"testing"
@@ -109,7 +109,10 @@ func TestE621NoAdapterDoesNotMutateMetadata(t *testing.T) {
 	}
 
 	meta := e621MetadataFixture()
-	original := maps.Clone(meta)
+	original, err := json.Marshal(meta)
+	if err != nil {
+		t.Fatal(err)
+	}
 	// The registry contains only Derpibooru; e621 must be a no-op and must
 	// not attempt any HTTP calls merely because it is processed by the registry.
 	if err := registry.Warm(context.Background(), meta); err != nil {
@@ -118,8 +121,12 @@ func TestE621NoAdapterDoesNotMutateMetadata(t *testing.T) {
 	if err := registry.Enrich(context.Background(), meta); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(meta, original) {
-		t.Fatalf("unadapted e621 metadata changed: got %#v, want %#v", meta, original)
+	after, err := json.Marshal(meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(original) {
+		t.Fatalf("unadapted e621 metadata changed: before %s, after %s", original, after)
 	}
 }
 
