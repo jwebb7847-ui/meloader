@@ -145,7 +145,7 @@ for msg in messages:
     if isinstance(msg, list) and msg and msg[0] == -1 and isinstance(msg[-1], dict):
         error = msg[-1]
         detail = str(error.get("message", ""))
-        detail = re.sub(r'https?://[^\\s\\\"\\\']+', '[URL REDACTED]', detail)
+        detail = re.sub(r"https?://\S+", "[URL REDACTED]", detail)
         print("Extractor error class:", error.get("error", "unknown"))
         print("Redacted detail:", detail[:350] or "(none)")
 PY
