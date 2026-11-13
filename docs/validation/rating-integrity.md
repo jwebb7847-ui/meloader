@@ -45,11 +45,13 @@ With an existing gallery-dl executable available, check one public post's metada
 
 ```sh
 gallery-dl --version
-gallery-dl --dump-json 'https://e621.net/posts/535' > e621-rating-check.json
-python3 - <<'PY'
+OUT="${TMPDIR:-/tmp}/e621-rating-check.json"
+gallery-dl --dump-json 'https://e621.net/posts/535' > "$OUT"
+python3 - "$OUT" <<'PY'
 import json
+import sys
 from pathlib import Path
-records = json.loads(Path("e621-rating-check.json").read_text())
+records = json.loads(Path(sys.argv[1]).read_text())
 posts = [x[-1] for x in records if isinstance(x, list) and x
          and isinstance(x[-1], dict) and x[-1].get("category") == "e621"]
 if not posts:
@@ -70,14 +72,22 @@ Only when the dedicated audit configuration is present and the usual port is fre
 
 ```sh
 CFG="$HOME/Library/Application Support/Monloader Audit/monloader.toml"
-test -f "$CFG" || { echo "Missing audit config — do not start with defaults"; false; }
+if [[ ! -f "$CFG" ]]; then
+  echo "Missing audit config — do not start with defaults"
+else
+  echo "Audit config exists"
+fi
 lsof -nP -iTCP:8456 -sTCP:LISTEN
 ```
 
 If the port is in use, **identify the old process and stop only the known audit instance** before launching another. Then, in a terminal in the Meloader worktree:
 
 ```sh
-go run ./cmd/monloader -config "$CFG"
+if [[ -f "$CFG" ]]; then
+  go run ./cmd/monloader -config "$CFG"
+else
+  echo "Aborting: missing audit configuration"
+fi
 ```
 
 Stop it with Ctrl+C. Do not use an older compiled binary or kill an unknown process just because it owns port 8456. Running the application is not necessary for the Go unit/integration test above; and to test a real push into Mebooru we must also verify Mebooru's commit, launch command, config, gallery, and local data root.
