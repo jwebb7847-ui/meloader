@@ -80,6 +80,16 @@ Develop browsing, review, organization, relationships and cross-source vocabular
 
 Complete invasive Monloader/Monbooru naming migration only when architecture and compatibility are stable.
 
+## Local VS Code testing protocol
+
+- **Default test launches are source-based:** `go run ./cmd/monloader -config "<existing monloader.toml path>"` for Meloader and `go run ./cmd/monbooru -config "<existing monbooru.toml path>"` for Mebooru, from each repository's intended checkout. Avoid launching old compiled executables for new validation unless comparing builds deliberately.
+- `go run` builds the **local checkout**, not the latest GitHub commit automatically. Before every important test: `git fetch origin --prune`, confirm `git status --short` is clean, explicitly select or verify the intended remote development ref, and log `git rev-parse HEAD`. Do not force-switch, reset or clean a dirty tree.
+- **Approved source refs as of 2026-11-13:** Meloader `meloader-item3-e621-validation`; Mebooru `mebooru-foundation`. These refs may advance; record exact commit SHAs for reproducible results.
+- Existing test/audit configuration and application data live outside Git. Preserve their explicit paths unless a separate controlled reset is agreed. In particular, a previously used Meloader config was at `~/Library/Application Support/Monloader Audit/monloader.toml`; verify it exists before launch. Git synchronization does not update running processes or external config/data.
+- Run foreground instances in separate VS Code terminals and stop them with Ctrl+C. If a port is occupied, inspect the listener and stop the *known* previous test process; do not indiscriminately kill everything on port 8455 or 8456.
+- Include the source commit, launch command, config-path identity (never credentials), tool versions (including gallery-dl where relevant), and observed test results in meaningful validation records.
+- End-to-end integration testing requires both applications running on known compatible revisions; standalone mapper/registry tests and Go benchmarks do not require either server to be running.
+
 ## Merge/acceptance gates
 
 - Run `go test -race ./...` and `go vet ./...` on supported Go version. Live integration tests are separately opt-in.
