@@ -1,6 +1,6 @@
 # Negative-path integrity and bounded throughput acceptance
 
-Status (2026-11-13): **positive Derpibooru -> running Mebooru Audit_A import fully passed**; image ID 7 retained its file, source, `rating:general`, and all 19 image-specific tags. The reverse Mebooru -> Meloader authenticated link was repaired by correcting the local API port. Live e621 extraction remains blocked by a peer connection reset, not a metadata regression.
+Status (2026-11-13): **expanded negative-path/mixed-batch tests passed Go race+vet CI** ([run 43356175480](https://github.com/jwebb7847-ui/meloader/actions/runs/43356175480), test code at `85c2d2e`, validation doc at `aa25f70`). **positive Derpibooru -> running Mebooru Audit_A import fully passed**; image ID 7 retained its file, source, `rating:general`, and all 19 image-specific tags. The reverse Mebooru -> Meloader authenticated link was repaired by correcting the local API port. Live e621 extraction remains blocked by a peer connection reset, not a metadata regression.
 
 This protocol adds **test-only** coverage and measurements. It changes no behavior, configuration, routing policy, gallery contents, or source authority.
 
@@ -123,7 +123,8 @@ For every run, record the source URL/query, gallery, two running server commit S
 
 - [x] Positive Derpibooru source -> Mebooru Audit_A -> per-image metadata, tags and original source persisted
 - [x] Reverse Mebooru -> Meloader authenticated health restored with existing bearer token
-- [ ] Expanded mixed-batch rejection/normal source-rating tests: record CI and local results
+- [x] Expanded mixed-batch rejection and normal source-rating cases passed Go race+vet CI (run 43356175480)
+- [ ] Repeat expanded negative-path tests locally on Apple Silicon
 - [ ] Execute the new local loopback HTTP batch benchmark on Apple Silicon and record metrics
 - [ ] One live Danbooru (or another distinct-rated-family) post accepted with correct native/mapped rating
 - [ ] Bounded 5-post and 20-post live workloads accepted and measured
