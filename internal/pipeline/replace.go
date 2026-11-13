@@ -69,6 +69,10 @@ func (p *Processor) processReplace(ctx context.Context, job, snap *queue.Job) er
 		p.failEnrichFetch(ctx, job, snap, err)
 		return nil
 	}
+	if err := p.ratingErr(w.Meta); err != nil {
+		p.failEnrichFetch(ctx, job, snap, err)
+		return nil
+	}
 	job.UpdateItem(0, func(it *queue.Item) { it.Status = queue.ItemDownloaded })
 
 	// The site's md5 claim guards against a corrupted or swapped download.
