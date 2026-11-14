@@ -46,12 +46,21 @@ func (s *Server) enqueueForm(w http.ResponseWriter, r *http.Request) {
 		flashFragment(w, "err", "Enter a URL or an MD5 hash.")
 		return
 	}
+	opts := queue.Options{}
+	gallery := r.PostFormValue("gallery")
+	if r.URL.Path == "/loader/queue" || gallery != "" {
+		if !loaderGallery(gallery) {
+			flashFragment(w, "err", "Choose a valid destination gallery.")
+			return
+		}
+		opts.Gallery = gallery
+	}
 	if md5, ok := hashImportTarget(target); ok {
 		if len(s.mapper.LookupSites()) == 0 {
 			flashFragment(w, "err", "MD5 lookup is off: no site in the lookup chain. Add one in Settings.")
 			return
 		}
-		s.queue.EnqueueHashImport(md5, queue.Options{})
+		s.queue.EnqueueHashImport(md5, opts)
 	} else if looksLikeSHA256(target) {
 		flashFragment(w, "err", sha256AddHint(s.ptr.Status()))
 		return
@@ -64,7 +73,7 @@ func (s *Server) enqueueForm(w http.ResponseWriter, r *http.Request) {
 			flashFragment(w, "err", "Pick how many posts to fetch.")
 			return
 		}
-		s.queue.Enqueue(target, queue.Options{}.WithItems(items))
+		s.queue.Enqueue(target, opts.WithItems(items))
 	}
 	// A redirect would reload the queue screen and drop its
 	// expand/collapse state.

@@ -183,6 +183,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /{$}", s.addScreen)
 	mux.HandleFunc("POST /{$}", flashForm(s.enqueueForm))
 	mux.HandleFunc("GET /queue", s.queueScreen)
+	mux.HandleFunc("GET /loader/queue", s.loaderQueueScreen)
+	mux.HandleFunc("POST /loader/queue", flashForm(s.enqueueForm))
 	mux.HandleFunc("GET /internal/queue-rows", s.queueRows)
 	mux.HandleFunc("GET /internal/queue-rows/{root}/items", s.queueRowItems)
 	mux.HandleFunc("POST /queue/{id}/retry", s.retryJob)
@@ -294,6 +296,7 @@ func (s *Server) Handler() http.Handler {
 	h = limitFormBody(s.sessions.Guard(h, nil))
 	h = s.SetupMiddleware(h)
 	h = s.sessions.Gate(h, sessionCookie, func() bool { return s.cfg.Current().Auth.EnablePassword }, isOpenPath)
+	h = s.loaderFramePolicy(h)
 	h = s.hostMiddleware(h)
 	h = loggingMiddleware(h)
 	return h
@@ -459,6 +462,7 @@ func (s *Server) base(r *http.Request, nav, title string) map[string]any {
 	return map[string]any{
 		"Title":              title,
 		"ActiveNav":          nav,
+		"LoaderEmbedded":     loaderEmbedded(r),
 		"CSRFToken":          s.csrf(r),
 		"AuthEnabled":        s.cfg.Current().Auth.EnablePassword,
 		"Version":            Version,

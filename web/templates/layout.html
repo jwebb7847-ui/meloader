@@ -6,11 +6,12 @@
   <script src="/static/shared/base.js" defer></script>
   <script src="/static/main.js" defer></script>
 </head>
-<body{{with .CanonicalURL}} data-canonical-url="{{.}}"{{end}}>
+<body{{if .LoaderEmbedded}} class="loader-embedded"{{end}}{{with .CanonicalURL}} data-canonical-url="{{.}}"{{end}}>
 {{end}}
 
 {{define "topbar"}}
   <div id="topbar">
+    {{if not .LoaderEmbedded}}
     <a href="/" id="logo" data-chord="g g"><img src="{{.BooruLogo}}" alt="" class="topbar-logo"><span>{{wordmark .BooruName}}</span></a>
     <nav id="nav">
       <a data-chord="g q" href="/queue" class="nav-queue{{if eq .ActiveNav "queue"}} active{{end}}">Queue</a>
@@ -19,6 +20,7 @@
       <a data-chord="g s" href="/settings" class="nav-settings{{if eq .ActiveNav "settings"}} active{{end}}">Settings</a>
       {{template "webui/pair_notice" .PairNotice}}
     </nav>
+    {{end}}
     <div id="topbar-right">
       {{template "pause_toggle" .}}
       {{if .AuthEnabled}}
