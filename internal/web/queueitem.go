@@ -92,6 +92,16 @@ func itemView(it queue.Item, ctx map[string]any) itemDisplay {
 		d.Outcome, d.OutcomeCls = "canceled", "o-canceled"
 	case it.ErrorCode != "":
 		d.Outcome, d.OutcomeCls, d.OutcomeTitle = errorLabel(it.ErrorCode), "o-failed", it.Error
+		if strings.HasPrefix(strings.TrimPrefix(it.Error, it.ErrorCode+": "), outcome.StrictTaxonomyPrefix) {
+			switch it.ErrorCode {
+			case outcome.ErrCodeRateLimited:
+				d.Outcome = "taxonomy rate limited"
+			case outcome.ErrCodeDownloadFailed:
+				d.Outcome = "taxonomy source unavailable"
+			case outcome.ErrCodeMappingFailed:
+				d.Outcome = "taxonomy unverified"
+			}
+		}
 	case it.Outcome != "":
 		d.Outcome, d.OutcomeCls = cmp.Or(outcomeLabels[it.Outcome], string(it.Outcome)), "o-"+string(it.Outcome)
 		if it.Outcome == outcome.SkippedArchive {

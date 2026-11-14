@@ -74,6 +74,27 @@ func TestStrictBlacklistVerdict(t *testing.T) {
 	}
 }
 
+func TestStrictTaxonomyFailureCodes(t *testing.T) {
+	for _, tc := range []struct {
+		err  error
+		code string
+	}{
+		{&taxonomy.RetryExhaustedError{Status: 429, Attempts: 5}, outcome.ErrCodeRateLimited},
+		{&taxonomy.RetryExhaustedError{Status: 503, Attempts: 5}, outcome.ErrCodeDownloadFailed},
+		{errors.New("malformed source evidence mentioning HTTP 429"), outcome.ErrCodeMappingFailed},
+	} {
+		err := strictTaxonomyError(t.Context(), fmt.Errorf("resolving tag: %w", tc.err))
+		if errorCode(err) != tc.code || !strings.Contains(err.Error(), tc.err.Error()) {
+			t.Errorf("strict taxonomy error = %v, want code %s and cause %q", err, tc.code, tc.err)
+		}
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := strictTaxonomyError(ctx, &taxonomy.RetryExhaustedError{Status: 429, Attempts: 5}); !errors.Is(err, context.Canceled) {
+		t.Errorf("cancellation reported as %v", err)
+	}
+}
+
 func TestStrictBlacklistGalleryDLMediaBoundary(t *testing.T) {
 	galleryDL := os.Getenv("MELOADER_STRICT_TEST_GDL")
 	if galleryDL == "" {
@@ -168,6 +189,8 @@ def posts(self):
             (47, ["safe", "rd", "violence"], 48),
         )
     for ident, tags, media_id in listing:
+        if self.params.get("q") == "fixture_taxonomy_failure" and ident not in (42, 43):
+            continue
         yield {"id": ident, "tags": tags, "tag_ids": [tag_ids[tag] for tag in tags], "created_at": "2020-01-01T00:00:00Z",
                "format": "jpg", "representations": {"full": "%[1]s/" + str(media_id) + ".jpg"}}
 
@@ -236,6 +259,8 @@ main()
 	var taxonomyTime atomic.Int64
 	var simulateLatency atomic.Bool
 	var retryOnce atomic.Bool
+	var rejectAlias atomic.Bool
+	var aliasRejections atomic.Int32
 	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		started := time.Now()
 		defer func() { taxonomyTime.Add(int64(time.Since(started))) }()
@@ -249,6 +274,12 @@ main()
 			return
 		}
 		if r.URL.Path == "/api/v1/json/tags/rainbow+dash" {
+			if rejectAlias.Load() {
+				aliasRejections.Add(1)
+				w.Header().Set("Retry-After", "0")
+				http.Error(w, "fixture rate limit", http.StatusTooManyRequests)
+				return
+			}
 			_ = json.NewEncoder(w).Encode(map[string]json.RawMessage{"tag": tagRecords["rainbow dash"]})
 			return
 		}
@@ -391,6 +422,39 @@ main()
 		t.Errorf("forced replay requested unexpected media: %v", paths)
 	}
 	lock.Unlock()
+
+	// The archive bypass would request media for post 42 if its unverified
+	// alias were mistakenly accepted. Post 43 has malformed taxonomy.
+	rejectAlias.Store(true)
+	fresh, err := taxonomy.NewDerpibooru("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	freshRegistry, err := taxonomy.NewRegistry(fresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retryPipeline := New(gdl.New(provider, lists), mapper, galleryClient, provider, dir, sitestate.New(), nil, nil, freshRegistry)
+	rateLimited := &queue.Job{ID: 12, URL: "https://derpibooru.org/search?q=fixture_taxonomy_failure", Options: forced.Options}
+	if err := retryPipeline.processDownload(t.Context(), rateLimited, rateLimited.Snapshot()); err != nil {
+		t.Fatal(err)
+	}
+	items := rateLimited.Snapshot().Items
+	if len(items) != 2 || items[0].Outcome != outcome.Failed || items[0].ErrorCode != outcome.ErrCodeRateLimited ||
+		!strings.Contains(items[0].Error, "HTTP 429 after 5 attempts") ||
+		items[1].Outcome != outcome.Failed || items[1].ErrorCode != outcome.ErrCodeMappingFailed ||
+		!strings.Contains(items[1].Error, "no verified alias fields") {
+		t.Errorf("expected distinct taxonomy failures: %+v", items)
+	}
+	if aliasRejections.Load() != 5 || uploads.Load() != 4 {
+		t.Errorf("alias 429 responses = %d, uploads = %d", aliasRejections.Load(), uploads.Load())
+	}
+	lock.Lock()
+	if len(paths) != 4 {
+		t.Errorf("unverified posts requested media: %v", paths)
+	}
+	lock.Unlock()
+	rejectAlias.Store(false)
 
 	if err := provider.Update(func(cfg *config.Config) error {
 		cfg.Tags.Blacklist = []string{"batch-block"}

@@ -51,3 +51,7 @@ type CodedError struct {
 }
 
 func (e *CodedError) Error() string { return e.Code + ": " + e.Msg }
+
+// StrictTaxonomyPrefix also identifies strict taxonomy errors in stored queue
+// rows, which carry a code and message rather than the original Go error.
+const StrictTaxonomyPrefix = "strict blacklist: source taxonomy: "

@@ -46,6 +46,25 @@ func TestQueueArchiveSkipDescribesDownloadHistory(t *testing.T) {
 	}
 }
 
+func TestQueueStrictTaxonomyFailureLabels(t *testing.T) {
+	for _, tc := range []struct {
+		code, detail, label string
+	}{
+		{outcome.ErrCodeRateLimited, outcome.StrictTaxonomyPrefix + "HTTP 429 after 5 attempts", "taxonomy rate limited"},
+		{outcome.ErrCodeDownloadFailed, outcome.StrictTaxonomyPrefix + "HTTP 503 after 5 attempts", "taxonomy source unavailable"},
+		{outcome.ErrCodeMappingFailed, outcome.StrictTaxonomyPrefix + "no verified alias fields", "taxonomy unverified"},
+		{outcome.ErrCodeRateLimited, "HTTP 429 from gallery-dl", "rate limited"},
+		{outcome.ErrCodeDownloadFailed, "HTTP 503 from gallery-dl", "download failed"},
+		{outcome.ErrCodeMappingFailed, "unreadable sidecar", "no usable file"},
+	} {
+		message := tc.code + ": " + tc.detail
+		view := itemView(queue.Item{ErrorCode: tc.code, Error: message}, nil)
+		if view.Outcome != tc.label || view.OutcomeCls != "o-failed" || view.OutcomeTitle != message {
+			t.Errorf("%s: unexpected queue item %+v", tc.label, view)
+		}
+	}
+}
+
 func TestLoaderEnqueuePinsGalleryAndBulkLimit(t *testing.T) {
 	cfg := config.Default()
 	cfg.Monbooru.APIToken = "paired"

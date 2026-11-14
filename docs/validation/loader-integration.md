@@ -63,6 +63,8 @@ For strict Derpibooru jobs, `strict-preflight` also reports the number of taxono
 
 In the 200-post loopback regression, the batched path recovered from one 429 and logged six taxonomy attempts, one 429, and one retry. It still created 197 images. The blacklisted post, the post with unverified taxonomy, and the post whose tags changed each made zero media requests.
 
+Strict Derpibooru queue items distinguish **taxonomy rate limited** after a final HTTP 429, **taxonomy source unavailable** after a final 5xx, and **taxonomy unverified** when source evidence cannot be verified. The detail shows the final HTTP status and attempt count for exhausted retries. The item remains failed and withheld before transfer. A loopback case checks that a post whose alias lookup exhausts five attempts and a post missing alias evidence receive distinct failure codes and make zero media requests.
+
 **Browser — Mebooru.** Use the previous safe Derpibooru job in `Audit_A` and click **Get next 200** once. Keep strict blacklist verification enabled. The current search can shift as posts are added, so record any archive skips. Collect the completed queue counts and the timing lines for the new job ID. A continuation measures a new window under the current cache conditions.
 
 ## Live Mac timing and archive replay
