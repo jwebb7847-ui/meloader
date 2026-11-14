@@ -78,6 +78,8 @@ The operator deleted the replayed images before job 34. The ordinary resubmissio
 
 The download archive records fetch history separately from the gallery. Deleting an image in Mebooru leaves that history intact. **Force download** explicitly retries all windows in the selected queue series, bypasses the download archive for the retry, and evaluates the current blacklist. To restore only the first window after continuing a search, submit it as a new job with **up to 200** and use **Force download** on that new row. The loopback regression verifies that this archive bypass fetches an allowed archived post and makes zero media requests for blocked or unverifiable posts.
 
+On 2026-11-14, the operator confirmed that the Mac review build at `21f262f` displayed **skipped by download archive**, showed the retry scope and blacklist behavior in the **Force download** confirmation, and left the completed job untouched on **Cancel**.
+
 ## Live Derpibooru pacing comparison
 
 The 20-post Mac comparison used the same ID-bounded search and destination, `Audit_A`, with strict blacklist verification enabled. Both ordinary submissions skipped all 20 through the archive. The two forced runs each fetched 20 files totaling 37,474,737 bytes, with source-request pacing held at 1.0 s.

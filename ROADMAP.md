@@ -27,7 +27,7 @@ Keep the network boundary intact: Meloader is the explicitly WAN-capable acquisi
 
 - **Meloader `main`** contains Items 1–4. [PR #5](https://github.com/jwebb7847-ui/meloader/pull/5) merged the stacked taxonomy and source-semantics work at `3aa5aca`. [PR #6](https://github.com/jwebb7847-ui/meloader/pull/6) merged the Derpibooru integrity fixes at `18edb38`. [PR #7](https://github.com/jwebb7847-ui/meloader/pull/7) merged strict blacklist verification at `5bcd092`. PRs #1–#4 record the earlier stacked reviews.
 - **Mebooru `mebooru-foundation`** contains the fork's library UI work. Its `main` remains the upstream-derived v1.24.0 baseline. See [MEBOORU.md](https://github.com/jwebb7847-ui/mebooru/blob/mebooru-foundation/MEBOORU.md) for the library's direction and baseline.
-- **Current milestone: Item 5.** Loader integration and bounded live Derpibooru validation are in review. The separate service and pairing are in place on the candidate branches.
+- **Next milestone: Item 6.** Build on the Loader integration and its bounded Mac acceptance with reliability and observability work.
 
 ## Milestones
 
@@ -55,7 +55,7 @@ Recover authoritative categories when gallery-dl emits flattened tags. Use the s
 
 The filing policy for named original characters and unusual namespaces passed Mac Trace acceptance in [PR #10](https://github.com/jwebb7847-ui/meloader/pull/10). Verified Derpibooru aliases in [PR #11](https://github.com/jwebb7847-ui/meloader/pull/11) match blacklist rules in both directions and file under the canonical tag. The alias change passed automated media-request checks and live Mac Trace acceptance. [Filing and alias evidence](docs/validation/derpibooru-filing.md)
 
-### 5. Meloader / Mebooru user integration — in review
+### 5. Meloader / Mebooru user integration — acceptance passed
 
 The native Mebooru **Loader** tab exposes Meloader's Queue, Watches, and PTR controls, with companion settings under **Settings → Meloader**. The browser surfaces use the separate Meloader origin and retain the existing pairing and library privacy boundary. The bounded Mac audits covered a 200-post Derpibooru import, gallery switching and result links, strict verification timing, and explicit archive replay. The 20-post pacing comparison closed with the 1.0 s default retained. [Integration and validation](docs/validation/loader-integration.md)
 
