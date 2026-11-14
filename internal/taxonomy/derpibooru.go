@@ -23,10 +23,16 @@ const (
 	derpibooruBaseURL       = "https://derpibooru.org"
 	derpibooruMaxConcurrent = 1
 	derpibooruMaxAttempts   = 5
+	derpibooruBatchSize     = 50
 )
 
 type Enricher interface {
 	Enrich(context.Context, map[string]any) error
+}
+
+// BatchEnricher enriches posts from one source and returns one error per post.
+type BatchEnricher interface {
+	EnrichBatch(context.Context, string, []map[string]any) []error
 }
 
 // Warmer is optional. It lets the pipeline populate source-taxonomy caches
@@ -292,6 +298,10 @@ func (d *Derpibooru) Enrich(ctx context.Context, meta map[string]any) error {
 	if err != nil {
 		return err
 	}
+	return d.enrichVerified(ctx, meta, sourceTags, records)
+}
+
+func (d *Derpibooru) enrichVerified(ctx context.Context, meta map[string]any, sourceTags []string, records []tagRecord) error {
 	if len(sourceTags) == 0 {
 		return nil
 	}
@@ -420,7 +430,7 @@ func afterNamespace(name string) string {
 	return strings.TrimSpace(rest)
 }
 
-func (d *Derpibooru) resolvePostTags(ctx context.Context, meta map[string]any) ([]string, []tagRecord, error) {
+func derpibooruPostLookups(meta map[string]any) ([]string, []tagLookup, error) {
 	sourceTags, err := tagStrings(meta["tags"])
 	if err != nil {
 		return nil, nil, err
@@ -459,72 +469,48 @@ func (d *Derpibooru) resolvePostTags(ctx context.Context, meta map[string]any) (
 	for i := range lookups {
 		lookups[i].id = idsByName[lookups[i].name]
 	}
+	return sourceTags, lookups, nil
+}
+
+func (d *Derpibooru) resolvePostTags(ctx context.Context, meta map[string]any) ([]string, []tagRecord, error) {
+	sourceTags, lookups, err := derpibooruPostLookups(meta)
+	if err != nil {
+		return nil, nil, err
+	}
 	if err := d.prefillByIDs(ctx, lookups); err != nil {
 		return nil, nil, fmt.Errorf("batch resolving Derpibooru taxonomy: %w", err)
 	}
-	records := make([]tagRecord, len(sourceTags))
-	for i, lookup := range lookups {
-		records[i], err = d.resolve(ctx, lookup, sourceTags[i])
-		if err != nil {
-			return nil, nil, fmt.Errorf("resolving Derpibooru tag %q: %w", sourceTags[i], err)
-		}
-	}
-	return sourceTags, records, nil
+	records, err := d.resolveLookups(ctx, sourceTags, lookups, nil)
+	return sourceTags, records, err
 }
 
-func (d *Derpibooru) prefillByIDs(ctx context.Context, lookups []tagLookup) error {
-	const batchSize = 50
-
+func (d *Derpibooru) uncachedIDs(lookups []tagLookup) []tagLookup {
 	missing := make([]tagLookup, 0, len(lookups))
-	seen := map[string]bool{}
+	seen := map[tagLookup]bool{}
 	for _, lookup := range lookups {
-		if lookup.id == "" || seen[lookup.id] {
+		if lookup.id == "" || seen[lookup] {
 			continue
 		}
-		seen[lookup.id] = true
+		seen[lookup] = true
 		if _, ok := d.cached(lookup); !ok {
 			missing = append(missing, lookup)
 		}
 	}
+	return missing
+}
 
-	for start := 0; start < len(missing); start += batchSize {
-		chunk := missing[start:min(start+batchSize, len(missing))]
-		ids := make([]string, 0, len(chunk))
-		byID := make(map[string]string, len(chunk))
-		byName := make(map[string]tagLookup, len(chunk))
-		for _, lookup := range chunk {
-			ids = append(ids, lookup.id)
-			byID[lookup.id] = lookup.name
-			byName[lookup.name] = lookup
-		}
-
-		records, err := d.fetchMany(ctx, ids)
+func (d *Derpibooru) prefillByIDs(ctx context.Context, lookups []tagLookup) error {
+	for chunk := range slices.Chunk(d.uncachedIDs(lookups), derpibooruBatchSize) {
+		results, err := d.fetchTagBatch(ctx, chunk)
 		if err != nil {
 			return err
 		}
-		verified := make(map[string]tagRecord, len(chunk))
-		for _, rec := range records {
-			id := strconv.FormatInt(rec.ID, 10)
-			name := normalizeKey(rec.Name)
-			if want, ok := byID[id]; ok && want != name {
-				return fmt.Errorf("Derpibooru tag id %s: expected name %q, got %q", id, want, rec.Name)
+		for _, lookup := range chunk {
+			if result := results[lookup]; result.err != nil {
+				return result.err
 			}
-			lookup, requested := byName[name]
-			if !requested {
-				continue
-			}
-			if err := lookup.checkID(rec); err != nil {
-				return err
-			}
-			if err := rec.validate(); err != nil {
-				return err
-			}
-			if old, ok := verified[name]; ok && !old.equal(rec) {
-				return fmt.Errorf("Derpibooru returned conflicting records for tag %q (id %s)", name, id)
-			}
-			verified[name] = rec
 		}
-		d.storeRecords(verified)
+		d.storeTagResults(chunk, results)
 	}
 	return nil
 }

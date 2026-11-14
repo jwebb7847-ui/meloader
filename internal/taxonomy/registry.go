@@ -125,6 +125,23 @@ func (r *Registry) Warm(
 	return err
 }
 
+func (r *Registry) EnrichBatch(ctx context.Context, source string, posts []map[string]any) []error {
+	if r != nil {
+		if batch, ok := r.bySource[normalizeAdapterSource(source)].(BatchEnricher); ok {
+			started := time.Now()
+			errs := batch.EnrichBatch(ctx, source, posts)
+			logx.Infof("perf: taxonomy stage=enrich-batch source=%s, posts=%d, duration=%s",
+				source, len(posts), time.Since(started).Round(time.Millisecond))
+			return errs
+		}
+	}
+	errs := make([]error, len(posts))
+	for i, meta := range posts {
+		errs[i] = r.Enrich(ctx, meta)
+	}
+	return errs
+}
+
 func (r *Registry) adapterFor(
 	meta map[string]any,
 ) Adapter {

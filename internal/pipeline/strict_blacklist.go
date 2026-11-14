@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/monbooru/monloader/internal/gdl"
+	"github.com/monbooru/monloader/internal/kwdict"
 	"github.com/monbooru/monloader/internal/mapping"
 	"github.com/monbooru/monloader/internal/outcome"
 	"github.com/monbooru/monloader/internal/queue"
@@ -18,14 +19,9 @@ import (
 // StrictBlacklistVerdict is shared by acquisition and Trace. The raw post
 // remains intact because the transfer gate compares it to the download pass.
 func StrictBlacklistVerdict(ctx context.Context, mapper *mapping.Mapper, resolver taxonomy.Enricher, item gdl.Item, rules mapping.StrictBlacklist) (note string, interpreted map[string]any, err error) {
-	if !item.HasStrictIdentity() {
-		return "", nil, strictBlacklistError("source identity or media URL is unavailable for verification")
-	}
-	if note := rules.EarlyMatch(item.Meta); note != "" {
-		return note, nil, nil
-	}
-	if err := mapping.ValidateStrictTags(item.Meta); err != nil {
-		return "", nil, strictBlacklistError(err.Error())
+	note, err = strictListingVerdict(item, rules)
+	if note != "" || err != nil {
+		return note, nil, err
 	}
 	interpreted = maps.Clone(item.Meta)
 	if item.Category == mapping.CategoryDerpibooru {
@@ -33,16 +29,91 @@ func StrictBlacklistVerdict(ctx context.Context, mapper *mapping.Mapper, resolve
 			return "", nil, strictBlacklistError("Derpibooru taxonomy resolver is unavailable")
 		}
 		if err := resolver.Enrich(ctx, interpreted); err != nil {
-			if ctx.Err() != nil {
-				return "", nil, ctx.Err()
-			}
-			return "", nil, strictBlacklistError("source taxonomy: " + err.Error())
+			return "", nil, strictTaxonomyError(ctx, err)
 		}
 	}
-	if err := mapper.ValidateSourceRating(interpreted); err != nil {
-		return "", nil, strictBlacklistError("source rating: " + err.Error())
+	note, err = strictInterpretedVerdict(mapper, item, interpreted, rules)
+	if err != nil {
+		return "", nil, err
 	}
-	return rules.Match(item.Meta, interpreted), interpreted, nil
+	return note, interpreted, nil
+}
+
+func strictListingVerdict(item gdl.Item, rules mapping.StrictBlacklist) (string, error) {
+	if !item.HasStrictIdentity() {
+		return "", strictBlacklistError("source identity or media URL is unavailable for verification")
+	}
+	if note := rules.EarlyMatch(item.Meta); note != "" {
+		return note, nil
+	}
+	if err := mapping.ValidateStrictTags(item.Meta); err != nil {
+		return "", strictBlacklistError(err.Error())
+	}
+	return "", nil
+}
+
+func strictTaxonomyError(ctx context.Context, err error) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return strictBlacklistError("source taxonomy: " + err.Error())
+}
+
+func strictInterpretedVerdict(mapper *mapping.Mapper, item gdl.Item, interpreted map[string]any, rules mapping.StrictBlacklist) (string, error) {
+	if err := mapper.ValidateSourceRating(interpreted); err != nil {
+		return "", strictBlacklistError("source rating: " + err.Error())
+	}
+	return rules.Match(item.Meta, interpreted), nil
+}
+
+type strictVerdict struct {
+	note string
+	err  error
+}
+
+func (p *Processor) strictWindowVerdicts(ctx context.Context, items []gdl.Item, site string, rules mapping.StrictBlacklist) []strictVerdict {
+	verdicts := make([]strictVerdict, len(items))
+	batch, batchable := p.taxonomy.(taxonomy.BatchEnricher)
+	var metas []map[string]any
+	var rows []int
+	for i, item := range items {
+		if ctx.Err() != nil {
+			return verdicts
+		}
+		switch {
+		case item.Category != site:
+			verdicts[i].err = strictBlacklistError("source changed within the listing")
+		case site != mapping.CategoryDerpibooru || !batchable:
+			verdicts[i].note, _, verdicts[i].err = StrictBlacklistVerdict(ctx, p.mapper, p.taxonomy, item, rules)
+		default:
+			note, err := strictListingVerdict(item, rules)
+			verdicts[i] = strictVerdict{note, err}
+			if note == "" && err == nil {
+				rows = append(rows, i)
+				metas = append(metas, maps.Clone(item.Meta))
+			}
+		}
+	}
+	if len(metas) == 0 {
+		return verdicts
+	}
+	errs := batch.EnrichBatch(ctx, site, metas)
+	if len(errs) != len(rows) {
+		for _, row := range rows {
+			verdicts[row].err = strictBlacklistError("source taxonomy returned incomplete batch verdicts")
+		}
+		return verdicts
+	}
+	for i, row := range rows {
+		if errs[i] != nil {
+			verdicts[row].err = strictTaxonomyError(ctx, errs[i])
+		} else if _, ok := metas[i][kwdict.InterpretedTagsKey].([]kwdict.InterpretedTag); !ok {
+			verdicts[row].err = strictBlacklistError("source taxonomy did not verify the post")
+		} else {
+			verdicts[row].note, verdicts[row].err = strictInterpretedVerdict(p.mapper, items[row], metas[i], rules)
+		}
+	}
+	return verdicts
 }
 
 func strictBlacklistError(message string) error {
@@ -62,16 +133,12 @@ func (p *Processor) fetchStrict(ctx context.Context, job, snap *queue.Job, resol
 	// Preflight outcomes must survive processItems, which treats a nil
 	// result as an archive skip on the normal acquisition path.
 	withheld := make(map[int]string)
+	verdicts := p.strictWindowVerdicts(ctx, resolved, site, rules)
 	for i, item := range resolved {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if item.Category != site {
-			failItem(job, i, outcome.ErrCodeMappingFailed, "strict blacklist: source changed within the listing")
-			withheld[i] = ""
-			continue
-		}
-		note, _, err := StrictBlacklistVerdict(ctx, p.mapper, p.taxonomy, item, rules)
+		note, err := verdicts[i].note, verdicts[i].err
 		switch {
 		case err != nil:
 			if ctx.Err() != nil {
