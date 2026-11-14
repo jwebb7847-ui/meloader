@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/monbooru/monloader/internal/config"
+	"github.com/monbooru/monloader/internal/outcome"
 	"github.com/monbooru/monloader/internal/queue"
 )
 
@@ -35,6 +36,13 @@ func TestLoaderFramePolicy(t *testing.T) {
 		if got := loaderFrameOrigin(raw); got != "" {
 			t.Errorf("unsafe origin %q accepted as %q", raw, got)
 		}
+	}
+}
+
+func TestQueueArchiveSkipDescribesDownloadHistory(t *testing.T) {
+	item := itemView(queue.Item{Outcome: outcome.SkippedArchive}, nil)
+	if item.Outcome != "skipped by download archive" || !strings.Contains(item.OutcomeTitle, "Force download") {
+		t.Errorf("archive skip display = %+v", item)
 	}
 }
 

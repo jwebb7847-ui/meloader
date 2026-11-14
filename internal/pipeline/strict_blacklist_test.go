@@ -365,6 +365,26 @@ main()
 			t.Errorf("archive-only timing for job %d = %v", job, transfer)
 		}
 	}
+	// An explicit replay must recover an allowed file even when the
+	// download archive remembers it. The same replay still rejects posts
+	// blocked by the current blacklist or missing valid source evidence.
+	forced := &queue.Job{ID: 11, URL: "https://derpibooru.org/search?q=rainbow+dash", Options: queue.Options{Gallery: "Audit_A", MaxItems: 7, Force: true}}
+	if err := p.processDownload(t.Context(), forced, forced.Snapshot()); err != nil {
+		t.Fatal(err)
+	}
+	var forcedOutcomes []outcome.Outcome
+	for _, item := range forced.Snapshot().Items {
+		forcedOutcomes = append(forcedOutcomes, item.Outcome)
+	}
+	wantForced := []outcome.Outcome{outcome.SkippedBlacklist, outcome.Created, outcome.Failed, outcome.Failed, outcome.Failed, outcome.SkippedBlacklist, outcome.SkippedBlacklist}
+	if !slices.Equal(forcedOutcomes, wantForced) || uploads.Load() != 4 {
+		t.Errorf("forced replay outcomes = %v, uploads = %d", forcedOutcomes, uploads.Load())
+	}
+	lock.Lock()
+	if !slices.Equal(paths, []string{"GET /42.jpg", "GET /52.jpg", "GET /62.jpg", "GET /42.jpg"}) {
+		t.Errorf("forced replay requested unexpected media: %v", paths)
+	}
+	lock.Unlock()
 
 	if err := provider.Update(func(cfg *config.Config) error {
 		cfg.Tags.Blacklist = []string{"batch-block"}

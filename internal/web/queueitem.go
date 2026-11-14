@@ -94,6 +94,9 @@ func itemView(it queue.Item, ctx map[string]any) itemDisplay {
 		d.Outcome, d.OutcomeCls, d.OutcomeTitle = errorLabel(it.ErrorCode), "o-failed", it.Error
 	case it.Outcome != "":
 		d.Outcome, d.OutcomeCls = cmp.Or(outcomeLabels[it.Outcome], string(it.Outcome)), "o-"+string(it.Outcome)
+		if it.Outcome == outcome.SkippedArchive {
+			d.OutcomeTitle = "The download archive records an earlier fetch. The image may have been deleted from the gallery. Use Force download to fetch it again."
+		}
 	default:
 		d.Outcome, d.OutcomeCls = string(it.Status), "o-"+string(it.Status)
 	}
@@ -112,7 +115,7 @@ func itemView(it queue.Item, ctx map[string]any) itemDisplay {
 
 var outcomeLabels = map[outcome.Outcome]string{
 	outcome.SkippedBlacklist:   "blacklisted",
-	outcome.SkippedArchive:     "already fetched",
+	outcome.SkippedArchive:     "skipped by download archive",
 	outcome.SkippedUnsupported: "file type not supported",
 }
 

@@ -60,3 +60,20 @@ Meloader logs strict acquisition timing at `info` with a queue job ID on each st
 Transfer `file_bytes` counts the final sizes of newly landed, evidence-verified files, excluding archive skips. A nonzero `size_errors` makes that count partial. The configured `sleep` and `sleep_request` values are in seconds. `extractor_default` means the managed config leaves that value to gallery-dl. The measurements do not isolate HTTP transfer time, the first media request, or time spent asleep. Keep the VPN and pacing settings consistent with the earlier live run, and compare the stage durations alongside the number of new files and their total bytes.
 
 **Browser — Mebooru.** Use the previous safe Derpibooru job in `Audit_A` and click **Get next 200** once. Keep strict blacklist verification enabled. The current search can shift as posts are added, so record any archive skips. Collect the completed queue counts and the timing lines for the new job ID. A continuation measures a new window under the current cache conditions.
+
+## Live Mac timing and archive replay
+
+The operator ran Meloader PR #14 at `61d9b62` against `Audit_A` on 2026-11-14. The logs separate the 09:32 canceled continuation from the completed 09:33 replay. The next search at 09:42 and its continuation at 09:43 were separate jobs shown together in the queue.
+
+| Job | Resolve | Strict preflight | gallery-dl run | Ingest | Total |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 32, canceled continuation | 6.607 s | 23.679 s | 12.182 s before cancellation | — | 42.902 s |
+| 33, completed replay | 6.560 s | 164 ms | 4m 17.228 s | 10.927 s | 4m 35.275 s |
+| 34, ordinary resubmission | 6.605 s | 19 ms | 7.132 s | 37 ms | 14.194 s |
+| 35, next 200 | 6.565 s | 17 ms | 4m 32.000 s | 11.919 s | 4m 50.903 s |
+
+Job 32 made 22 taxonomy HTTP attempts, including two 429s, and warmed the cache for the continuation. Job 33 made one taxonomy request. The supplied logs for jobs 34 and 35 show zero taxonomy HTTP attempts. Job 33 landed 200 files (241,898,223 bytes) and job 35 landed 190 files (290,138,314 bytes). Configured `sleep` and `sleep_request` were both one second. The live runs point to the gallery-dl phase as the dominant cost with a warm cache. The timings cover different windows and file sizes.
+
+The operator deleted the replayed images before job 34. The ordinary resubmission had 195 archive skips, four blacklist skips and one new transfer. Job 35 had nine archive skips and one blacklist skip. The grouped 400-post row showed 190 created, one duplicate, 204 other skips and five blacklisted. A result opened successfully in `Audit_A`.
+
+The download archive records fetch history separately from the gallery. Deleting an image in Mebooru leaves that history intact. **Force download** explicitly retries all windows in the selected queue series, bypasses the download archive for the retry, and evaluates the current blacklist. To restore only the first window after continuing a search, submit it as a new job with **up to 200** and use **Force download** on that new row. The loopback regression verifies that this archive bypass fetches an allowed archived post and makes zero media requests for blocked or unverifiable posts.
