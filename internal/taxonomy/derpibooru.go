@@ -801,11 +801,19 @@ func (d *Derpibooru) search(
 }
 
 func (d *Derpibooru) requestTags(ctx context.Context, u *url.URL, terms int) (tagSearchResponse, error) {
+	stats, _ := ctx.Value(requestStatsKey{}).(*RequestStats)
+	waitStarted := time.Now()
 	select {
 	case d.slots <- struct{}{}:
 		defer func() { <-d.slots }()
 	case <-ctx.Done():
+		if stats != nil {
+			stats.slotWait.Add(int64(time.Since(waitStarted)))
+		}
 		return tagSearchResponse{}, ctx.Err()
+	}
+	if stats != nil {
+		stats.slotWait.Add(int64(time.Since(waitStarted)))
 	}
 	for attempt := 0; attempt < derpibooruMaxAttempts; attempt++ {
 		req, err := http.NewRequestWithContext(
@@ -826,12 +834,20 @@ func (d *Derpibooru) requestTags(ctx context.Context, u *url.URL, terms int) (ta
 		requestStarted := time.Now()
 
 		resp, err := d.client.Do(req)
+		requestTime := time.Since(requestStarted)
+		if stats != nil {
+			stats.attempts.Add(1)
+			stats.httpTime.Add(int64(requestTime))
+			if resp != nil && resp.StatusCode == http.StatusTooManyRequests {
+				stats.rateLimited.Add(1)
+			}
+		}
 		if err != nil {
 			logx.Infof(
 				"perf: taxonomy source=derpibooru, stage=http, attempt=%d, terms=%d, duration=%s, err=%v",
 				attempt+1,
 				terms,
-				time.Since(requestStarted).Round(time.Millisecond),
+				requestTime.Round(time.Millisecond),
 				err,
 			)
 			return tagSearchResponse{}, err
@@ -842,7 +858,7 @@ func (d *Derpibooru) requestTags(ctx context.Context, u *url.URL, terms int) (ta
 			attempt+1,
 			terms,
 			resp.StatusCode,
-			time.Since(requestStarted).Round(time.Millisecond),
+			requestTime.Round(time.Millisecond),
 		)
 
 		if resp.StatusCode >= 200 &&
@@ -894,10 +910,17 @@ func (d *Derpibooru) requestTags(ctx context.Context, u *url.URL, terms int) (ta
 			)
 		}
 
-		if err := sleepContext(
-			ctx,
-			delay,
-		); err != nil {
+		if stats != nil {
+			stats.retries.Add(1)
+			logx.Infof("perf: job=%d stage=taxonomy-retry source=derpibooru attempt=%d status=%d terms=%d delay=%s retry_after=%t",
+				stats.job, attempt+1, status, terms, delay, hasRetryAfter)
+		}
+		retryStarted := time.Now()
+		err = sleepContext(ctx, delay)
+		if stats != nil {
+			stats.retryWait.Add(int64(time.Since(retryStarted)))
+		}
+		if err != nil {
 			return tagSearchResponse{}, err
 		}
 	}
