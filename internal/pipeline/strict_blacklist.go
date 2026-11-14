@@ -3,8 +3,10 @@ package pipeline
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"maps"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -58,7 +60,15 @@ func strictTaxonomyError(ctx context.Context, err error) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	return strictBlacklistError("source taxonomy: " + err.Error())
+	code := outcome.ErrCodeMappingFailed
+	var exhausted *taxonomy.RetryExhaustedError
+	if errors.As(err, &exhausted) {
+		code = outcome.ErrCodeDownloadFailed
+		if exhausted.Status == http.StatusTooManyRequests {
+			code = outcome.ErrCodeRateLimited
+		}
+	}
+	return &outcome.CodedError{Code: code, Msg: outcome.StrictTaxonomyPrefix + err.Error()}
 }
 
 func strictInterpretedVerdict(mapper *mapping.Mapper, item gdl.Item, interpreted map[string]any, rules mapping.StrictBlacklist) (string, error) {

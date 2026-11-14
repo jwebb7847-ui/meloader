@@ -896,12 +896,14 @@ func (d *Derpibooru) requestTags(ctx context.Context, u *url.URL, terms int) (ta
 		)
 		resp.Body.Close()
 
-		if !retryable ||
-			attempt == derpibooruMaxAttempts-1 {
+		if !retryable {
 			return tagSearchResponse{}, fmt.Errorf(
 				"Derpibooru returned HTTP %d",
 				status,
 			)
+		}
+		if attempt == derpibooruMaxAttempts-1 {
+			return tagSearchResponse{}, &RetryExhaustedError{Status: status, Attempts: attempt + 1}
 		}
 
 		if !hasRetryAfter {
@@ -928,6 +930,17 @@ func (d *Derpibooru) requestTags(ctx context.Context, u *url.URL, terms int) (ta
 	return tagSearchResponse{}, fmt.Errorf(
 		"Derpibooru request attempts exhausted",
 	)
+}
+
+// RetryExhaustedError describes a taxonomy request that used all its HTTP
+// attempts without obtaining source evidence.
+type RetryExhaustedError struct {
+	Status   int
+	Attempts int
+}
+
+func (e *RetryExhaustedError) Error() string {
+	return fmt.Sprintf("Derpibooru returned HTTP %d after %d attempts", e.Status, e.Attempts)
 }
 
 func retryAfter(
