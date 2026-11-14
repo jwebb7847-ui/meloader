@@ -1,18 +1,18 @@
 # Local audit runbook
 
-Last verified by the operator on the Apple Silicon MacBook Air on 2026-11-13. This is the development audit setup. Verify current listeners, checkout SHAs, and config files before use.
+Last reported by the operator on the Apple Silicon MacBook Air on 2026-11-14. Verify current listeners, checkout SHAs, and config files before use.
 
 ## Last validated setup
 
 | Component | Checkout and code checkpoint | Audit configuration |
 | --- | --- | --- |
 | Mebooru | `$HOME/Documents/VSC/mebooru` · `mebooru-foundation` · `fbb5232` code checkpoint | `$HOME/Library/Application Support/Mebooru Audit/monbooru.toml` · `127.0.0.1:8455` |
-| Meloader | `$HOME/Documents/VSC/meloader-item4-qa` · detached at `0b7ff78`, the same code as merge `18edb38` | `$HOME/Library/Application Support/Monloader Audit Main Upgrade/monloader.toml` · `127.0.0.1:8456` |
+| Meloader | `$HOME/Documents/VSC/meloader-blacklist-qa` · detached at `eb6edd3` for the latest Mac check | `$HOME/Library/Application Support/Monloader Audit Main Upgrade/monloader.toml` · `127.0.0.1:8456` |
 | gallery-dl | Isolated `1.32.19` executable | `$HOME/Library/Application Support/Meloader Validation/gallery-dl-1.32.19/bin/gallery-dl` |
 
-The repository Go modules declare Go 1.27.3. The latest Meloader Mac audit used Go 1.27.4. The older upgrade-audit checkout is `$HOME/Documents/VSC/meloader-rating-qa` at `3aa5aca`. The older Meloader state is in `$HOME/Library/Application Support/Monloader Audit`. Reuse the existing **Main Upgrade** copy for this audit. The two sites' upstream internal command names are still `monbooru` and `monloader`.
+The repository Go modules declare Go 1.27.3. The last recorded Mac Go version was 1.27.4. The two apps use the upstream command names `monbooru` and `monloader`. Reuse the **Main Upgrade** audit state for the paired check.
 
-The [strict blacklist audit](blacklist-timing.md#live-mac-acceptance) used a separate Meloader checkout at `$HOME/Documents/VSC/meloader-blacklist-qa`, detached at `025a3e5`, with the same **Main Upgrade** state and gallery-dl binary. The launch block below reproduces the earlier upgrade smoke test. For blacklist validation, run it from a clean checkout at the revision under test.
+The earlier audit checkouts were `$HOME/Documents/VSC/meloader-rating-qa` at `3aa5aca` and `$HOME/Documents/VSC/meloader-item4-qa` at `0b7ff78`. The original Meloader audit state is in `$HOME/Library/Application Support/Monloader Audit`. See the [blacklist validation notes](blacklist-timing.md#live-mac-acceptance) for the exact revisions tested in that series.
 
 The configured Mebooru galleries include `Audit_A`, `Audit_B`, and `home`. All queue tests here target `Audit_A`. The Mebooru config is authoritative for its media and database paths. The copied audit setup isolates Meloader state and still targets the dedicated Mebooru audit gallery.
 
@@ -43,7 +43,7 @@ cd "$HOME/Documents/VSC/mebooru" &&
 
 **Browser — Mebooru.** Open [127.0.0.1:8455](http://127.0.0.1:8455/) and select `Audit_A` in the gallery switcher. The companion connection indicator may update after Meloader starts.
 
-**VS Code — Meloader terminal.** Define and run this function in a separate terminal. Use the same function after a restart. It is scoped to this shell session.
+**VS Code — Meloader terminal.** Define and run this function in a separate terminal from Mebooru. It prints the checked-out commit before launch. Verify that the displayed commit matches the test revision, then leave this terminal running. Use the same function after a restart.
 
 ```sh
 run_meloader_upgrade() (
@@ -51,7 +51,7 @@ run_meloader_upgrade() (
   audit_copy="$HOME/Library/Application Support/Monloader Audit Main Upgrade"
   audit_gdl="$HOME/Library/Application Support/Meloader Validation/gallery-dl-1.32.19/bin/gallery-dl"
 
-  cd "$HOME/Documents/VSC/meloader-item4-qa"
+  cd "$HOME/Documents/VSC/meloader-blacklist-qa"
   git status --short --branch
   git rev-parse HEAD
   for audit_file in monloader.toml gallery-dl.json upgrade-archive.sqlite; do
@@ -87,6 +87,10 @@ run_meloader_upgrade
 **Browser — Mebooru.** Check that the footer reports a connection to Monloader. The forward API is Meloader → Mebooru on 8455. Mebooru's reverse `[monloader].api_url` points to `http://127.0.0.1:8456`. Use the existing pairing. A trace that reports `connection refused` for 8455 can still preview outgoing tags but has not tested the gallery's resolution. An occupied 8456 requires identifying the listener before restarting.
 
 The [authenticated Danbooru audit](negative-path-throughput.md#8-live-danbooru-acceptance) used this paired setup. Keep Danbooru credentials in the local audit configuration.
+
+## Check debug-to-Trace prefill
+
+**Browser — Meloader.** After starting a build with PR #8, hard-refresh the [Queue](http://127.0.0.1:8456/queue) with Cmd+Shift+R. Enable **Require blacklist verification before downloading** in **Settings → Rules** if needed. From the queue, expand the existing `Audit_A` job for Derpibooru post `3796956` and choose **[debug] → Trace a post**. Settings should open at Trace with `https://derpibooru.org/images/3796956` in **Post URL** and an empty results area. The lookup starts when you click **Trace**.
 
 ## Reproduce the upgrade smoke test
 

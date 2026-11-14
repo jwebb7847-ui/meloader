@@ -22,6 +22,7 @@ For fork development, start with the [project handoff](docs/project/handoff.md),
 - **Download** a booru post, pool, tag search or artist page, or a direct image link
 - **Pools and manga**: a booru pool imports as an ordered collection; a manga or comic gallery becomes one `.cbz` for monbooru's reader
 - **Tags mapped to monbooru**: tags by category (artist, character, copyright, meta...), rating and source, normalized across booru families
+- **Optional strict blacklist verification** in Settings → Rules checks source metadata before requesting media on supported routes. [Scope and setup](docs/validation/blacklist-timing.md)
 - **50+ site profiles** for boorus and manga/comic sites; every other gallery-dl site works through a generic fallback
 - **Update gallery-dl** from the app, or roll it back, when a site fix lands, without waiting for a monloader release
 - **Queue** that shows whether each item was added, already in your library, skipped, or failed

@@ -39,4 +39,10 @@ Run the opt-in checks with `MELOADER_STRICT_TEST_GDL` set to the pinned gallery-
 
 The operator tested [PR #7](https://github.com/jwebb7847-ui/meloader/pull/7) at `025a3e5` with gallery-dl `1.32.19` and the existing paired `Audit_A` setup. On safe-rated Derpibooru post `3796956`, Trace reported **Blocked before download** with the temporary global rule `character:twilight_sparkle`. The queue showed **1 blacklisted** and named the same rule. After removing the temporary rule, the same post returned **1 created** and **19 tags sent**. These screenshots establish the live outcomes. The automated loopback test independently counts media requests.
 
+The operator confirmed that the merged review build at `5bcd092` directed strict-mode debug requests to Trace on the Mac.
+
+## Debug-to-Trace prefill
+
+The operator confirmed the [PR #8](https://github.com/jwebb7847-ui/meloader/pull/8) workflow at `eb6edd3` in the same Mac audit setup. From an existing `Audit_A` queue item for Derpibooru post `3796956`, **[debug] → Trace a post** opened the Trace section and prefilled the source post URL. Trace runs when the operator clicks **Trace**. The prefill uses an existing queue entry and needs no new import.
+
 [Current matcher](../../internal/mapping/blacklist.go) · [Acquisition pipeline](../../internal/pipeline/processor.go) · [gallery-dl file dispatch and predicates](https://github.com/mikf/gallery-dl/blob/v1.32.19/gallery_dl/job.py#L252)
