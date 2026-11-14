@@ -2,7 +2,7 @@
 {{if .Error}}
 <p class="flash flash-err">{{.Error}}</p>
 {{else if .StrictBlacklist}}
-<p class="field-hint">Strict blacklist verification is on. <a href="/settings#trace">Trace a post</a> to inspect source tags without fetching media.</p>
+<p class="field-hint">Strict blacklist verification is on. <a href="/settings#trace?url={{.URL | urlquery}}">Trace a post</a> to inspect source tags without fetching media.</p>
 {{else if .Log}}
 <div class="debug-log-head">
   <span class="field-hint">{{.URL}}</span>
