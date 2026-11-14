@@ -255,6 +255,21 @@ document.addEventListener("DOMContentLoaded", function () {
   htmx.ajax("GET", "/settings/sites/" + encodeURIComponent(site) + "/dialog", "#site-dialog-body");
 });
 
+// Carry the selected source URL in the fragment so Settings can prefill
+// Trace without sending the URL in its page request.
+document.addEventListener("DOMContentLoaded", function () {
+  var input = document.getElementById("rules-trace-url");
+  if (!input || !location.hash.startsWith("#trace?")) {
+    return;
+  }
+  var url = new URLSearchParams(location.hash.slice("#trace?".length)).get("url");
+  if (url) {
+    input.value = url;
+  }
+  history.replaceState(null, "", "#trace");
+  document.getElementById("trace").scrollIntoView();
+});
+
 // A refusal re-renders without a #section anchor, leaving its flash below
 // the fold; a redirect brings its own.
 document.addEventListener("DOMContentLoaded", function () {
