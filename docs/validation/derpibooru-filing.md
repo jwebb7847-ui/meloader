@@ -68,4 +68,12 @@ Blacklist rules can use any source-confirmed spelling in the Derpibooru tag fami
 
 Canonical records carry their incoming aliases in the existing taxonomy lookup. When a post supplies an alias, the adapter also verifies its canonical target and the reciprocal listing. Strict mode withholds media when required alias evidence is missing or inconsistent. Existing cache entries without alias fields are refreshed as their tags are encountered. Verified entries can be reused after restart.
 
-The loopback regression used gallery-dl 1.32.19 and synthetic source metadata. It ran the canonical and both alias rules against canonical and alias-tagged posts. The media server received no requests for the blocked posts, and the nonviolent explicit control imported. Separate fixtures covered standard matching, strict matching, Trace, canonical filing, unconfirmed targets, and reuse of the enriched cache. Live Mac acceptance of the alias implementation is pending. Trace post `2623405` with strict mode and the temporary rule `character:dashie`, repeat with `character:rd`, then restore the previous rules. Each trace should report **Blocked before download** and identify the temporary rule.
+The loopback regression used gallery-dl 1.32.19 and synthetic source metadata. It ran the canonical and both alias rules against canonical and alias-tagged posts. The media server received no requests for the blocked posts, and the nonviolent explicit control imported. Separate fixtures covered standard matching, strict matching, Trace, canonical filing, unconfirmed targets, and reuse of the enriched cache.
+
+### Mac alias acceptance
+
+On 2026-11-14 the operator confirmed both strict Trace checks passed in `Audit_A` on [PR #11](https://github.com/jwebb7847-ui/meloader/pull/11) at `574fd4e`. Post `2623405` supplied `rainbow dash`. With the temporary global rule `character:dashie`, Trace reported **Blocked before download** and named that rule. With `character:rd`, it reported the same verdict and named the new rule. The traces used live metadata without an import.
+
+### Warm-cache merge review
+
+A synthetic 20-post workload with 193 distinct tags compared `main` at `27b1be8` with the combined filing and alias code at `574fd4e`. Each pass enriched and mapped 440 tag assignments, ran the blacklist check, and failed if the resolver attempted HTTP. On Linux amd64 with Go 1.27.3, the five-run median was 1.315 ms per batch on the baseline and 1.320 ms on the candidate. Allocated bytes rose from about 541 KB to 613 KB per batch. These timings cover warm metadata processing on one host. Bulk acquisition timing remains deferred.
