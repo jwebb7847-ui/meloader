@@ -314,6 +314,28 @@ After restart, tracing Derpibooru post `3796956` previewed **19 tags**, showed `
 
 This closes the single-post Danbooru acceptance check. The 36-tag count describes the preview and submitted tags.
 
+## 9. Local 400-image end-to-end benchmark
+
+On 2026-11-14, the merged Meloader `de5da08` and Mebooru `630e439` ran on Linux x86-64 with Go 1.27.3 and gallery-dl 1.32.19. A loopback server supplied 200 JPEGs at 384 × 512 and 200 PNGs at 640 × 480, totaling 218,368,413 bytes. The fixture supplied categorized e621 metadata. Meloader used one worker, strict blacklist verification, and a fresh download archive and queue. Mebooru used an empty `Audit_A` on local disk. The test submitted the Loader form and used the normal continuation endpoint for the second 200-post window.
+
+| Measurement | Window 1 | Window 2 |
+| --- | ---: | ---: |
+| Time to first committed gallery image | 2.25 s | 2.04 s |
+| Strict preflight | 2 ms | 1 ms |
+| Strict transfer, including filter setup | 1.811 s | 1.735 s |
+| Mebooru ingest phase | 4.785 s | 4.622 s |
+| Queue completion observed | 7.02 s | 6.69 s |
+| Created / failed / duplicate | 200 / 0 / 0 | 200 / 0 / 0 |
+
+The two windows completed in **13.72 s** from first submission through the final queue result, or **29.2 images/s**. There were 400 media GETs and 400 unique gallery images and thumbnails. The verification checked every image's dimensions, byte count, SHA-256, source post and URL, and the persisted rating, character, and general tags. A separate two-post blacklist control made zero media requests and created zero gallery rows.
+
+| Process | Ready RSS | Peak RSS | Ready goroutines | Highest sampled goroutines |
+| --- | ---: | ---: | ---: | ---: |
+| Meloader | 21.8 MiB | 30.1 MiB | 11 | 18 |
+| Mebooru | 32.7 MiB | 63.3 MiB | 20 | 23 |
+
+Peak RSS is the Linux process high-water mark through the measured windows. It excludes gallery-dl and other child processes. Goroutines were sampled from each app's existing settings stats about every 250 ms, and first import was polled about every 50 ms. The local source supplied metadata and media without live source latency or production pacing. Use this single run as a local baseline for ingestion and continuation. It fulfills the revised 400-image acceptance target. The 10,000-image run remains deferred.
+
 ## Acceptance checklist and deferred work
 
 - [x] Positive Derpibooru source -> Mebooru Audit_A -> per-image metadata, tags and original source persisted
@@ -330,6 +352,7 @@ This closes the single-post Danbooru acceptance check. The 36-tag count describe
 - [x] Bounded live Derpibooru cold/warm taxonomy measurement passed: 20 posts, identical tags across all passes and zero warm taxonomy HTTP attempts
 - [x] Post-merge Derpibooru smoke test passed for five live imports, queue history reload and archive skips after restart
 - [x] Post-merge image metadata spot checks and taxonomy-cache reuse passed on the merged build
+- [x] 400-image loopback bulk acceptance passed with both real apps, two 200-post windows, and strict blacklist verification
 - [x] Live e621 trace and import passed for post `535` in `Audit_A`. See the [live e621 result](e621.md#live-e621-import--2026-11-13).
 - [x] [Live Danbooru trace and import](#8-live-danbooru-acceptance) passed for post `294929` in `Audit_A`, including native `s` → `rating:sensitive`, categorized tags, and original attribution
 - [x] e621 `lore → meta` and `contributor → artist` filing policy approved after [live traces](e621.md#live-lore-and-contributor-traces--2026-11-13)

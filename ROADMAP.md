@@ -25,7 +25,7 @@ Keep the network boundary intact: Meloader is the explicitly WAN-capable acquisi
 
 ## Current work and branches
 
-- **Meloader `main`** contains Items 1–4. [PR #5](https://github.com/jwebb7847-ui/meloader/pull/5) merged the stacked taxonomy and source-semantics work at `3aa5aca`. [PR #6](https://github.com/jwebb7847-ui/meloader/pull/6) merged the Derpibooru integrity fixes at `18edb38`. [PR #7](https://github.com/jwebb7847-ui/meloader/pull/7) merged strict blacklist verification at `5bcd092`. PRs #1–#4 record the earlier stacked reviews.
+- **Meloader `main`** contains the Loader integration, cross-post taxonomy batching, and strict download timing from [PR #12](https://github.com/jwebb7847-ui/meloader/pull/12), [PR #13](https://github.com/jwebb7847-ui/meloader/pull/13), and [PR #14](https://github.com/jwebb7847-ui/meloader/pull/14). The merged code checkpoint is `de5da08`.
 - **Mebooru `mebooru-foundation`** contains the fork's library UI work. Its `main` remains the upstream-derived v1.24.0 baseline. See [MEBOORU.md](https://github.com/jwebb7847-ui/mebooru/blob/mebooru-foundation/MEBOORU.md) for the library's direction and baseline.
 - **Next milestone: Item 6.** Build on the Loader integration and its bounded Mac acceptance with reliability and observability work.
 
@@ -35,12 +35,12 @@ Keep the network boundary intact: Meloader is the explicitly WAN-capable acquisi
 
 Recover authoritative categories when gallery-dl emits flattened tags. Use the shared registry in `internal/taxonomy`, a persistent category cache, and the generic mapper. Revisit long-tail taxonomy semantics in Item 4.
 
-### 2. Validate source taxonomy and optimization — bounded acceptance passed
+### 2. Validate source taxonomy and optimization — complete
 
 - A 20-post Derpibooru taxonomy workload took **22.99 s cold**, with 17 HTTP attempts including two rate-limit responses. Three warm reloads reproduced the same 442 mapped tag assignments, made **zero taxonomy HTTP attempts**, and took **1.38 ms median** for enrichment and mapping. This measures resolver and mapper work. [Cold/warm audit](docs/validation/negative-path-throughput.md#6-live-derpibooru-taxonomy-cache-audit)
 - The bounded Safebooru continuation created 20 images in about **35 s**. The prior window created 15 and skipped five. [Live acquisition results](docs/validation/negative-path-throughput.md#bounded-20-post-safebooru-run-and-continuation--passed)
 - After merging, a copied-state Derpibooru audit created five images, preserved ratings, categories and source links, restored queue history after restart, reused the taxonomy cache, and skipped all five on replay through the download archive. [Upgrade smoke test](docs/validation/negative-path-throughput.md#7-post-merge-derpibooru-upgrade-smoke-test)
-- Bounded 200-post Derpibooru end-to-end tests ran during Item 5. Tests at 1,000 and 10,000 images remain deferred. Measure time to first import, throughput, added HTTP requests, peak memory/goroutines and failures before making bulk performance claims. Use the separate synthetic results only as local processing baselines.
+- Bounded 200-post Derpibooru end-to-end tests ran during Item 5. A 400-image loopback run through both real apps completed the bulk acceptance check across two 200-post windows. It verified 400 imports, 400 media requests, zero failures and zero duplicate rows, and recorded first import, throughput, process memory and goroutines. The 400-image run replaced the planned 1,000-image run. Keep the 10,000-image run deferred until a concrete scale question calls for it. [400-image bulk acceptance](docs/validation/negative-path-throughput.md#9-local-400-image-end-to-end-benchmark)
 
 ### 3. Generalized source adapters — complete
 
