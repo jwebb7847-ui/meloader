@@ -38,3 +38,9 @@ On 2026-11-14, the operator ran one strict Derpibooru search through Loader with
 | Whole job | 8 minutes 51.258 seconds in the server log. The operator estimated 8 minutes 45 seconds and first noticed a downloaded row around minute five. |
 
 The first download is gated on strict verification of the window. The timing identifies cold taxonomy request volume as the first optimization target. Evaluate batching distinct tag IDs across posts within the existing request limit while preserving post-level verification and retry behavior. The VPN speed test measured a different server and cannot isolate the Derpibooru media route or rate limits.
+
+## Cross-post taxonomy batching
+
+Strict Derpibooru acquisition now deduplicates uncached tag lookups across the current window and requests up to 50 distinct IDs per call. Every post still checks its own source identity, rating, taxonomy, aliases and blacklist before gallery-dl may request media. An omitted record uses the existing exact lookup. Contradictory evidence and exhausted retries withhold the affected posts.
+
+The gallery-dl 1.32.19 loopback regression used the same 200 posts and simulated 10 ms of latency per taxonomy request. Cross-post batching reduced taxonomy calls from 200 to five. Time to the first media request was about 3.69 seconds for the per-post path and 1.39 seconds for the batched path in one run. Both paths produced 197 creates, one blacklist skip and two failures. The alias-blocked post, the post with unverified taxonomy, and the post whose tags changed between listing and download made zero media requests. The taxonomy parity test also verified zero requests with a warm cache. These timings are fixture results. Live Derpibooru and VPN timing still varies with rate limits and media transfer.

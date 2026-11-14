@@ -14,6 +14,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/monbooru/monloader/internal/config"
 	"github.com/monbooru/monloader/internal/gdl"
@@ -84,8 +85,12 @@ func TestStrictBlacklistGalleryDLMediaBoundary(t *testing.T) {
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	var lock sync.Mutex
 	var paths []string
+	var firstMedia time.Time
 	media := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		lock.Lock()
+		if firstMedia.IsZero() {
+			firstMedia = time.Now()
+		}
 		paths = append(paths, r.Method+" "+r.URL.Path)
 		lock.Unlock()
 		w.Header().Set("Content-Type", "image/jpeg")
@@ -116,6 +121,21 @@ from gallery_dl import main
 from gallery_dl.extractor import danbooru, e621, philomena
 
 def posts(self):
+    if self.params.get("q") == "batch_fixture":
+        for ident in range(1001, 1201):
+            tags, ids = ["safe", "fixture " + str(ident)], [1, ident]
+            if ident == 1002:
+                tags.append("unverified")
+                ids.append(4)
+            if ident == 1003 and "-j" not in sys.argv:
+                tags.append("violence")
+                ids.append(3)
+            yield {"id": ident, "tags": tags, "tag_ids": ids,
+                   "created_at": "2020-01-01T00:00:00Z", "format": "jpg",
+                   "representations": {"full": "%[1]s/" + str(ident) + ".jpg"}}
+        return
+    tag_ids = {"safe": 1, "explicit": 2, "rainbow dash": 39229,
+               "dashie": 24568, "rd": 63932, "violence": 3, "unverified": 4}
     listing = (
         (41, ["safe", "rainbow dash", "violence"], 41),
         (42, ["explicit", "dashie"], 42),
@@ -136,8 +156,8 @@ def posts(self):
             (47, ["safe", "rd", "violence"], 48),
         )
     for ident, tags, media_id in listing:
-        yield {"id": ident, "tags": tags, "created_at": "2020-01-01T00:00:00Z",
-               "format": "jpg", "representations": {"full": "%s/" + str(media_id) + ".jpg"}}
+        yield {"id": ident, "tags": tags, "tag_ids": [tag_ids[tag] for tag in tags], "created_at": "2020-01-01T00:00:00Z",
+               "format": "jpg", "representations": {"full": "%[1]s/" + str(media_id) + ".jpg"}}
 
 philomena.PhilomenaSearchExtractor.posts = posts
 
@@ -171,6 +191,7 @@ main()
 	cfg.GalleryDL.BinaryPath = bin
 	cfg.GalleryDL.ConfigPath = filepath.Join(dir, "gallery-dl.json")
 	cfg.GalleryDL.ArchivePath = filepath.Join(dir, "archive.sqlite")
+	cfg.GalleryDL.SleepRequest = 0
 	// User-supplied gallery-dl keywords must not hide native content tags
 	// or overwrite the URL used by the strict download predicate.
 	cfg.GalleryDL.RawConfig = `{
@@ -195,12 +216,44 @@ main()
 		"violence":     json.RawMessage(`{"id":3,"name":"violence","category":null,"aliased_tag":null,"aliases":[]}`),
 		"unverified":   json.RawMessage(`{"id":4,"name":"unverified","category":null}`),
 	}
+	var taxonomyCalls atomic.Int32
+	var taxonomyTime atomic.Int64
+	var simulateLatency atomic.Bool
 	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		started := time.Now()
+		defer func() { taxonomyTime.Add(int64(time.Since(started))) }()
+		taxonomyCalls.Add(1)
+		if simulateLatency.Load() {
+			time.Sleep(10 * time.Millisecond)
+		}
 		if r.URL.Path == "/api/v1/json/tags/rainbow+dash" {
 			_ = json.NewEncoder(w).Encode(map[string]json.RawMessage{"tag": tagRecords["rainbow dash"]})
 			return
 		}
 		name := r.URL.Query().Get("q")
+		if strings.HasPrefix(name, "id:") {
+			var records []json.RawMessage
+			for _, term := range strings.Split(name, " || ") {
+				for _, record := range tagRecords {
+					if strings.HasPrefix(string(record), `{"id":`+strings.TrimPrefix(term, "id:")+",") {
+						records = append(records, record)
+						break
+					}
+				}
+				var id int
+				if _, err := fmt.Sscanf(term, "id:%d", &id); err == nil && id >= 1001 && id <= 1200 {
+					aliases := `[]`
+					if id == 1001 {
+						aliases = `["batch-dash-block"]`
+					}
+					records = append(records, json.RawMessage(fmt.Sprintf(
+						`{"id":%d,"name":"fixture %d","category":null,"aliased_tag":null,"aliases":%s}`,
+						id, id, aliases)))
+				}
+			}
+			_ = json.NewEncoder(w).Encode(map[string][]json.RawMessage{"tags": records})
+			return
+		}
 		if rec, ok := tagRecords[name]; ok {
 			_ = json.NewEncoder(w).Encode(map[string][]json.RawMessage{"tags": {rec}})
 			return
@@ -217,7 +270,11 @@ main()
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := New(gdl.New(provider, lists), mapper, galleryClient, provider, dir, sitestate.New(), nil, nil, resolver)
+	registry, err := taxonomy.NewRegistry(resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := New(gdl.New(provider, lists), mapper, galleryClient, provider, dir, sitestate.New(), nil, nil, registry)
 	for round, rule := range []string{"character:rainbow_dash violence", "character:dashie violence", "character:rd violence"} {
 		if err := provider.Update(func(cfg *config.Config) error {
 			cfg.Tags.Blacklist = []string{rule}
@@ -282,8 +339,81 @@ main()
 		t.Errorf("gallery uploads=%d, want 3", got)
 	}
 	lock.Lock()
-	defer lock.Unlock()
 	if !slices.Equal(paths, []string{"GET /42.jpg", "GET /52.jpg", "GET /62.jpg"}) {
 		t.Errorf("media requests=%v, want only the explicit nonviolent controls", paths)
+	}
+	lock.Unlock()
+
+	if err := provider.Update(func(cfg *config.Config) error {
+		cfg.Tags.Blacklist = []string{"batch-block"}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var baseline []outcome.Outcome
+	simulateLatency.Store(true)
+	for _, mode := range []string{"per-post", "cross-post"} {
+		resolver, err := taxonomy.NewDerpibooru("")
+		if err != nil {
+			t.Fatal(err)
+		}
+		registry, err := taxonomy.NewRegistry(resolver)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var enricher taxonomy.Enricher = registry
+		wantCalls := int32(5)
+		if mode == "per-post" {
+			// Preserve the old pipeline path with the same resolver and fixture.
+			enricher = taxonomyEnrichFunc(registry.Enrich)
+			wantCalls = 200
+		}
+		p := New(gdl.New(provider, lists), mapper, galleryClient, provider, dir, sitestate.New(), nil, nil, enricher)
+		if err := os.Remove(cfg.GalleryDL.ArchivePath); err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		taxonomyCalls.Store(0)
+		taxonomyTime.Store(0)
+		lock.Lock()
+		paths, firstMedia = nil, time.Time{}
+		lock.Unlock()
+		start := time.Now()
+		job := &queue.Job{ID: 10, URL: "https://derpibooru.org/search?q=batch_fixture", Gallery: "Audit_A", MaxItems: 200}
+		if err := p.processDownload(t.Context(), job, job.Snapshot()); err != nil {
+			t.Fatal(err)
+		}
+		if got := taxonomyCalls.Load(); got != wantCalls {
+			t.Errorf("%s: %d taxonomy requests, want %d", mode, got, wantCalls)
+		}
+		var outcomes []outcome.Outcome
+		for _, item := range job.Snapshot().Items {
+			outcomes = append(outcomes, item.Outcome)
+		}
+		if len(outcomes) != 200 || !slices.Equal(outcomes[:3], []outcome.Outcome{outcome.SkippedBlacklist, outcome.Failed, outcome.Failed}) {
+			t.Fatalf("%s: unexpected outcomes %v", mode, outcomes)
+		}
+		for _, got := range outcomes[3:] {
+			if got != outcome.Created {
+				t.Fatalf("%s: allowed control outcome %q", mode, got)
+			}
+		}
+		if baseline == nil {
+			baseline = outcomes
+		} else if !slices.Equal(baseline, outcomes) {
+			t.Fatal("cross-post outcomes differ from per-post outcomes")
+		}
+		lock.Lock()
+		gotPaths, first := slices.Clone(paths), firstMedia
+		lock.Unlock()
+		if len(gotPaths) != 197 {
+			t.Fatalf("%s: %d media requests, want 197", mode, len(gotPaths))
+		}
+		for i, path := range gotPaths {
+			if path != fmt.Sprintf("GET /%d.jpg", i+1004) {
+				t.Fatalf("%s: unexpected media request %q", mode, path)
+			}
+		}
+		t.Logf("%s: 200 posts, %d taxonomy requests, taxonomy handler time %s, first media %s, total %s",
+			mode, taxonomyCalls.Load(), time.Duration(taxonomyTime.Load()), first.Sub(start), time.Since(start))
 	}
 }
