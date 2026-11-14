@@ -10,12 +10,126 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/monbooru/monloader/internal/config"
+	"github.com/monbooru/monloader/internal/mapping"
 )
+
+func TestDerpibooruFilingAndBlacklistCompatibility(t *testing.T) {
+	records := []tagRecord{
+		{ID: 1, Name: "safe", Category: tagCategory{value: "rating"}},
+		{ID: 2, Name: "oc:milky way", Namespace: "oc", NameInNamespace: "milky way", Category: tagCategory{value: "oc"}},
+		{ID: 3, Name: "milky way", Category: tagCategory{value: "character"}},
+		{ID: 4, Name: "oc", Category: tagCategory{value: "oc"}},
+		{ID: 5, Name: "oc only", Category: tagCategory{value: "oc"}},
+		{ID: 6, Name: "parent:rainbow dash", Namespace: "parent", Category: tagCategory{uncategorized: true}},
+		{ID: 7, Name: "colorist:ironhades", Namespace: "colorist", Category: tagCategory{value: "origin"}},
+		{ID: 8, Name: "fanfic:the bridge", Namespace: "fanfic", Category: tagCategory{value: "content-fanmade"}},
+		{ID: 9, Name: "series:springshadowdrop's diary", Namespace: "series", Category: tagCategory{value: "content-fanmade"}},
+		{ID: 10, Name: "creator:example", Category: tagCategory{uncategorized: true}},
+		{ID: 11, Name: "species:example", Namespace: "species", Category: tagCategory{uncategorized: true}},
+		{ID: 12, Name: "violence", Category: tagCategory{uncategorized: true}},
+	}
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		_ = json.NewEncoder(w).Encode(tagSearchResponse{Tags: records})
+	}))
+	defer server.Close()
+	cache := filepath.Join(t.TempDir(), "tags.json")
+	resolver, err := newDerpibooru(cache, server.URL, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Default()
+	cfg.Tags.Blacklist = []string{"character:milky_way violence"}
+	provider := config.NewProvider(cfg)
+	mapper, err := mapping.New(provider, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := map[string]any{"category": "derpibooru", "id": "42",
+		"tags":    []string{"safe", "oc:milky way", "milky way", "oc", "oc only", "parent:rainbow dash", "colorist:ironhades", "fanfic:the bridge", "series:springshadowdrop's diary", "creator:example", "species:example", "violence"},
+		"tag_ids": []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12},
+	}
+	if err := resolver.Enrich(t.Context(), raw); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"character:milky_way", "character:oc:milky_way", "creator:example", "general:species:example",
+		"meta:colorist:ironhades", "meta:fanfic:the_bridge", "meta:oc", "meta:oc_only", "meta:series:springshadowdrop's_diary",
+		"parent:rainbow_dash", "rating:general", "violence"}
+	if got := mapper.Map(raw).Tags; !reflect.DeepEqual(got, want) {
+		t.Fatalf("tags = %v, want %v", got, want)
+	}
+	warm, err := newDerpibooru(cache, server.URL, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		rule    string
+		blocked bool
+	}{
+		{"character:milky_way violence", true},
+		{"milky_way violence", true},
+		{"character:oc:milky_way violence", true},
+		{"character:milky* violence", true},
+		{"-character:milky_way violence", false},
+		{"character:rainbow_dash violence", false},
+	} {
+		t.Run(tc.rule, func(t *testing.T) {
+			if err := provider.Update(func(cfg *config.Config) error {
+				cfg.Tags.Blacklist = []string{tc.rule}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			// Exclude the same-named ordinary character so an old rule can
+			// match only through the OC compatibility spelling.
+			source := map[string]any{"category": "derpibooru", "tags": []string{"safe", "oc:milky way", "parent:rainbow dash", "violence"},
+				"tag_ids": []int{1, 2, 6, 12}}
+			meta := map[string]any{"category": "derpibooru", "tags": source["tags"], "tag_ids": source["tag_ids"]}
+			if err := warm.Enrich(t.Context(), meta); err != nil {
+				t.Fatal(err)
+			}
+			rules, err := mapper.StrictBlacklist("derpibooru")
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, normal := mapper.Blacklisted(meta)
+			strict := rules.Match(source, meta) != ""
+			trace := mapper.Trace(meta)
+			if normal != tc.blocked || strict != tc.blocked || (trace.Skipped != "") != tc.blocked {
+				t.Fatalf("blacklist outcome: standard=%t strict=%t trace=%q, want blocked=%t", normal, strict, trace.Skipped, tc.blocked)
+			}
+			if trace.Rows[0].Listed != "oc:milky way" || trace.Rows[0].Sent != "character:oc:milky_way" {
+				t.Fatalf("trace lost the source or filed spelling: %+v", trace.Rows[0])
+			}
+		})
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("expected one cold batch and no warm requests, got %d", got)
+	}
+	profile, ok := mapper.Lookup("derpibooru")
+	if !ok {
+		t.Fatal("missing Derpibooru profile")
+	}
+	profile.TagRules = map[string]string{"character:milky_way": ""}
+	if err := mapper.SaveUserProfile("derpibooru", profile); err != nil {
+		t.Fatal(err)
+	}
+	if got := mapper.Map(raw).Tags; slices.Contains(got, "character:oc:milky_way") {
+		t.Fatalf("legacy tag suppression no longer applies: %v", got)
+	}
+	if err := resolver.Enrich(t.Context(), raw); err != nil {
+		t.Fatalf("repeated enrichment: %v", err)
+	}
+}
 
 func TestDerpibooruEnrich(t *testing.T) {
 	records := map[string]tagRecord{
@@ -270,7 +384,7 @@ func TestDerpibooruTargetSemantics(t *testing.T) {
 			},
 			source:     "oc:anon",
 			wantTarget: "character",
-			wantName:   "anon",
+			wantName:   "oc:anon",
 		},
 		{
 			name: "generic oc tag is metadata",

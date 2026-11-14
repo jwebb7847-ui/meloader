@@ -174,12 +174,14 @@ func (m *Mapper) matchBlacklist(meta map[string]any, profile Profile, rules []bl
 		return "", false
 	}
 	category := kwdict.String(meta, "category")
-	m.eachTag(category, profile, meta, func(_, _, s string) {
-		for _, read := range blacklistReads(profile, s) {
+	m.eachTag(category, profile, meta, func(_, _, s, legacy string) {
+		for _, read := range postBlacklistReads(profile, s, legacy, false) {
 			tags = append(tags, splitPostTag(read))
 		}
-	}, func(_, _, s string) {
-		tags = append(tags, splitPostTag(normalizeTag(s)))
+	}, func(_, _, s, legacy string) {
+		for _, read := range postBlacklistReads(profile, s, legacy, true) {
+			tags = append(tags, splitPostTag(read))
+		}
 	})
 	rule, hit := firstBlacklistRule(rules, tags, m.postRating(category, profile, meta), flatOnly)
 	if !hit {
@@ -191,10 +193,25 @@ func (m *Mapper) matchBlacklist(meta map[string]any, profile Profile, rules []bl
 func (r blacklistRule) note() string { return r.list + " rule: " + r.text }
 
 func blacklistReads(profile Profile, tag string) []string {
-	source := normalizeTag(tag)
+	source := normalizeFiledTag(tag)
 	reads := []string{source}
 	if mapped := applyTagRule(profile.TagRules, source); mapped != "" && mapped != source {
 		reads = append(reads, mapped)
+	}
+	return reads
+}
+
+func postBlacklistReads(profile Profile, filed, legacy string, dropped bool) []string {
+	if dropped {
+		reads := []string{normalizeFiledTag(filed)}
+		if legacy != "" {
+			reads = append(reads, normalizeFiledTag(legacy))
+		}
+		return reads
+	}
+	reads := blacklistReads(profile, filed)
+	if legacy != "" {
+		reads = append(reads, blacklistReads(profile, legacy)...)
 	}
 	return reads
 }

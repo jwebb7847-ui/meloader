@@ -9,6 +9,18 @@ import (
 	"strings"
 )
 
+// InterpretedTagsKey carries verified taxonomy alongside extractor metadata.
+// A JSON extractor payload cannot supply the typed value used by the mapper.
+const InterpretedTagsKey = "_meloader_interpreted_tags"
+
+type InterpretedTag struct {
+	Listed   string
+	Category string
+	Name     string
+	// LegacyBlacklistName preserves existing matches after a filing rename.
+	LegacyBlacklistName string
+}
+
 func String(m map[string]any, key string) string {
 	switch v := m[key].(type) {
 	case string:

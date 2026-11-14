@@ -52,15 +52,15 @@ func (m *Mapper) Trace(meta map[string]any) PostTrace {
 	var tags []postTag
 	row := func(r TraceRow, spellings []string) {
 		r.Field = strings.TrimPrefix(r.Field, "tags_")
-		for _, s := range spellings {
+		for _, s := range slices.Compact(spellings) {
 			r.Reads = append(r.Reads, TraceRead{Tag: s})
 			tags = append(tags, splitPostTag(s))
 		}
 		t.Rows = append(t.Rows, r)
 	}
-	m.eachTag(category, profile, meta, func(field, listed, s string) {
-		source := normalizeTag(s)
-		after := applyTagRule(profile.TagRules, source)
+	m.eachTag(category, profile, meta, func(field, listed, s, legacy string) {
+		source := normalizeFiledTag(s)
+		after := applyFiledTagRule(profile.TagRules, source, legacy)
 		mapped := splitPostTag(source)
 		r := TraceRow{Field: field, Listed: listed, Category: mapped.category, Mapped: source, Ruled: after, RuleDropped: after == "" && source != ""}
 		if after != "" {
@@ -72,9 +72,9 @@ func (m *Mapper) Trace(meta map[string]any) PostTrace {
 		if r.Unchecked != "" && r.Unchecked != mapped.category {
 			t.Warnings = append(t.Warnings, fmt.Sprintf("tag rule %s -> %s: %s is unchecked in Rules, so this tag never reaches monbooru", source, after, r.Unchecked))
 		}
-		row(r, blacklistReads(profile, s))
-	}, func(field, listed, s string) {
-		row(TraceRow{Field: field, Listed: listed, MapDropped: true}, []string{normalizeTag(s)})
+		row(r, postBlacklistReads(profile, s, legacy, false))
+	}, func(field, listed, s, legacy string) {
+		row(TraceRow{Field: field, Listed: listed, MapDropped: true}, postBlacklistReads(profile, s, legacy, true))
 	})
 
 	t.Rating = m.postRating(category, profile, meta)
