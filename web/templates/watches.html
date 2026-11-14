@@ -3,6 +3,7 @@
 {{template "monbooru_banner" .}}
 <div class="content-scroll">
 <main id="content" class="content-wide">
+  {{if .LoaderEmbedded}}<p class="field-hint">Watches use Meloader’s source and default gallery settings.</p>{{end}}
   <form class="add-bar" hx-post="/watches" hx-target="#watch-flash" hx-swap="innerHTML"
         hx-on::after-request="if (event.detail.xhr.getResponseHeader('HX-Retarget')) { this.reset(); document.getElementById('watch-flash').textContent = ''; }">
     <div class="add-row">

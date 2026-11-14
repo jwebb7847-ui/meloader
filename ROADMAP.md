@@ -57,7 +57,7 @@ The filing policy for named original characters and unusual namespaces passed Ma
 
 ### 5. Meloader / Mebooru user integration
 
-Make source acquisition feel native within Mebooru, potentially as a top-level tab, while initially keeping Meloader a separate explicitly WAN-capable service and retaining Mebooru's library privacy boundary.
+Provide a native Mebooru **Loader** tab with Meloader's existing Queue, Watches, and PTR controls. Put companion settings under **Settings → Meloader**. Keep the browser surfaces on the separate Meloader origin and retain the existing pairing and library privacy boundary. Use a single live Mac search capped at 200 posts for acceptance. [Integration and validation](docs/validation/loader-integration.md)
 
 ### 6. Reliability and observability
 

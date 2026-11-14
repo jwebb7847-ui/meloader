@@ -11,9 +11,9 @@
   <summary>+{{.More}} more</summary>
   <div class="job-items"></div>
 </details>
-{{else if gt (len .Items) $cap}}{{$rest := slice .Items $cap (len .Items)}}{{template "queue_items" (dict "Items" (slice .Items 0 $cap) "MonbooruURL" .MonbooruURL "Site" .Site "ImageID" .ImageID "Kind" .Kind "JobURL" .JobURL "PageURL" .PageURL)}}
+{{else if gt (len .Items) $cap}}{{$rest := slice .Items $cap (len .Items)}}{{template "queue_items" (dict "Items" (slice .Items 0 $cap) "MonbooruURL" .MonbooruURL "Gallery" .Gallery "Site" .Site "ImageID" .ImageID "Kind" .Kind "JobURL" .JobURL "PageURL" .PageURL)}}
 <details class="more-items">
   <summary>+{{len $rest}} more ({{moreSummary $rest}})</summary>
-  <div class="job-items">{{template "queue_items" (dict "Items" $rest "MonbooruURL" .MonbooruURL "Site" .Site "ImageID" .ImageID "Kind" .Kind "JobURL" .JobURL "PageURL" .PageURL)}}</div>
+  <div class="job-items">{{template "queue_items" (dict "Items" $rest "MonbooruURL" .MonbooruURL "Gallery" .Gallery "Site" .Site "ImageID" .ImageID "Kind" .Kind "JobURL" .JobURL "PageURL" .PageURL)}}</div>
 </details>
 {{else}}{{template "queue_items" .}}{{end}}{{end}}

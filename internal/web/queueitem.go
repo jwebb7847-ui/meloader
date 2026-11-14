@@ -3,6 +3,7 @@ package web
 import (
 	"cmp"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -29,6 +30,7 @@ func itemView(it queue.Item, ctx map[string]any) itemDisplay {
 	base, _ := ctx["MonbooruURL"].(string)
 	imageID, _ := ctx["ImageID"].(int64)
 	site, _ := ctx["Site"].(string)
+	gallery, _ := ctx["Gallery"].(string)
 
 	d := itemDisplay{Warnings: it.TagWarnings}
 	if it.TagsSent > 0 || len(it.Held) > 0 {
@@ -46,11 +48,14 @@ func itemView(it queue.Item, ctx map[string]any) itemDisplay {
 	switch {
 	case base != "" && it.SHA256 != "":
 		d.ViewURL = base + "/i/" + it.SHA256
-	case base != "" && it.MonbooruID != 0:
+		if gallery != "" {
+			d.ViewURL += "?gallery=" + url.QueryEscape(gallery)
+		}
+	case base != "" && gallery == "" && it.MonbooruID != 0:
 		d.ViewURL = fmt.Sprintf("%s/images/%d", base, it.MonbooruID)
 	case kind == queue.KindContrib && it.URL != "":
 		d.ViewURL = it.URL
-	case base != "" && enrich && imageID != 0:
+	case base != "" && gallery == "" && enrich && imageID != 0:
 		d.ViewURL = fmt.Sprintf("%s/images/%d", base, imageID)
 	}
 

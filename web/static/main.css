@@ -33,6 +33,9 @@
 
 #content { flex: 1; padding: 16px; width: 100%; max-width: 1000px; margin: 0 auto; }
 #content.content-wide { max-width: 1280px; }
+.loader-embedded #topbar { justify-content: flex-end; }
+.loader-embedded #content { max-width: none; }
+.loader-destination { white-space: nowrap; }
 .content-scroll { flex: 1; min-height: 0; overflow-y: auto; }
 
 .pause-toggle, .pause-toggle form { display: inline-flex; }

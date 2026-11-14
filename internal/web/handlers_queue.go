@@ -13,16 +13,24 @@ import (
 )
 
 func onQueueScreen(r *http.Request) bool {
+	if r.URL.Path == "/loader/queue" {
+		return true
+	}
 	u, err := url.Parse(r.Header.Get("HX-Current-URL"))
-	return err == nil && u.Path == "/queue"
+	return err == nil && (u.Path == "/queue" || u.Path == "/loader/queue")
 }
 
 func (s *Server) queueScreen(w http.ResponseWriter, r *http.Request) {
+	s.renderQueueScreen(w, r, "")
+}
+
+func (s *Server) renderQueueScreen(w http.ResponseWriter, r *http.Request, gallery string) {
 	data := s.base(r, "queue", "Queue - "+s.titleName())
 	s.fillQueue(r, data)
 	data["ItemChoices"] = s.itemsChoices(0)
 	data["Actions"] = s.queueActions()
 	data["MD5LookupOff"] = s.md5LookupOff()
+	data["LoaderGallery"] = gallery
 	s.render(w, "queue", data)
 }
 
@@ -80,7 +88,7 @@ func (s *Server) queueRowItems(w http.ResponseWriter, r *http.Request) {
 	for _, g := range groupJobs(jobs) {
 		if g.Root == root {
 			s.fillItems(&g)
-			s.render(w, "queue_items_capped", map[string]any{"Items": g.Items, "MonbooruURL": s.monbooruWebBase(), "Site": g.Lead.Site, "ImageID": g.Lead.ImageID, "Kind": g.Lead.Kind, "JobURL": g.Lead.URL, "PageURL": g.Lead.PageURL})
+			s.render(w, "queue_items_capped", map[string]any{"Items": g.Items, "MonbooruURL": s.monbooruWebBase(), "Gallery": g.Lead.Gallery, "Site": g.Lead.Site, "ImageID": g.Lead.ImageID, "Kind": g.Lead.Kind, "JobURL": g.Lead.URL, "PageURL": g.Lead.PageURL})
 			return
 		}
 	}

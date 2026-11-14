@@ -66,7 +66,7 @@
   <td colspan="7">
     <details data-job="{{.Root}}" open{{if not $active}} id="job-{{.Root}}-{{.Count}}" hx-preserve="true" hx-get="/internal/queue-rows/{{.Root}}/items" hx-trigger="load once" hx-target="find .job-items" hx-swap="innerHTML"{{end}}>
       <summary>{{.Count}} item{{if ne .Count 1}}s{{end}}{{$ph := .Phase}}{{if ne $ph "finished"}} <span class="job-phase job-phase-{{$ph}}">{{if eq $ph "downloading"}}downloading...{{else}}sending...{{end}}</span>{{end}}</summary>
-      <div class="job-items">{{if $active}}{{template "queue_items_capped" (dict "Items" .Items "More" .More "MonbooruURL" $.MonbooruURL "Site" .Lead.Site "ImageID" .Lead.ImageID "Kind" .Lead.Kind "JobURL" .Lead.URL "PageURL" .Lead.PageURL)}}{{end}}</div>
+      <div class="job-items">{{if $active}}{{template "queue_items_capped" (dict "Items" .Items "More" .More "MonbooruURL" $.MonbooruURL "Gallery" .Lead.Gallery "Site" .Lead.Site "ImageID" .Lead.ImageID "Kind" .Lead.Kind "JobURL" .Lead.URL "PageURL" .Lead.PageURL)}}{{end}}</div>
     </details>
   </td>
 </tr>

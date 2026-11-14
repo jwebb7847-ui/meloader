@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"errors"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -37,7 +38,11 @@ type watchRow struct {
 func (s *Server) watchesScreen(w http.ResponseWriter, r *http.Request) {
 	data := s.base(r, "watches", "Watched - "+s.titleName())
 	s.fillWatches(data)
-	data["DefaultWatchHours"] = defaultWatchHours
+	if loaderEmbedded(r) {
+		data["DefaultWatchHours"] = 0
+	} else {
+		data["DefaultWatchHours"] = defaultWatchHours
+	}
 	s.render(w, "watches", data)
 }
 
@@ -179,7 +184,11 @@ func (s *Server) watchJob(w http.ResponseWriter, r *http.Request) {
 		addBarFlash(w, "Only a finished search can be watched.")
 		return
 	}
-	if _, err := s.queue.AddWatch(job.URL, defaultWatchHours, s.rowItems(job), job); err != nil {
+	hours := defaultWatchHours
+	if current, err := url.Parse(r.Header.Get("HX-Current-URL")); err == nil && current.Path == "/loader/queue" {
+		hours = 0
+	}
+	if _, err := s.queue.AddWatch(job.URL, hours, s.rowItems(job), job); err != nil {
 		addBarFlash(w, watchErrMsg(err))
 		return
 	}
