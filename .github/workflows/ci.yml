@@ -32,3 +32,14 @@ jobs:
 
       - name: Go vet
         run: go vet ./...
+
+      - name: Run strict download regression with pinned gallery-dl
+        run: |
+          source packaging/pins.env
+          venv="$RUNNER_TEMP/meloader-strict-gallery-dl"
+          python3 -m venv "$venv"
+          "$venv/bin/python3" -m pip install --disable-pip-version-check "gallery-dl==$GDL_VERSION"
+          test "$("$venv/bin/gallery-dl" --version)" = "$GDL_VERSION"
+          MELOADER_STRICT_TEST_GDL="$venv/bin/gallery-dl" \
+            go test -race -count=1 -timeout=3m -v \
+              -run '^TestStrictBlacklistGalleryDLMediaBoundary$' ./internal/pipeline
