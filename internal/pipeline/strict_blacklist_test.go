@@ -235,12 +235,18 @@ main()
 	var taxonomyCalls atomic.Int32
 	var taxonomyTime atomic.Int64
 	var simulateLatency atomic.Bool
+	var retryOnce atomic.Bool
 	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		started := time.Now()
 		defer func() { taxonomyTime.Add(int64(time.Since(started))) }()
 		taxonomyCalls.Add(1)
 		if simulateLatency.Load() {
 			time.Sleep(10 * time.Millisecond)
+		}
+		if retryOnce.Swap(false) {
+			w.Header().Set("Retry-After", "1")
+			http.Error(w, "fixture rate limit", http.StatusTooManyRequests)
+			return
 		}
 		if r.URL.Path == "/api/v1/json/tags/rainbow+dash" {
 			_ = json.NewEncoder(w).Encode(map[string]json.RawMessage{"tag": tagRecords["rainbow dash"]})
@@ -405,10 +411,15 @@ main()
 		}
 		var enricher taxonomy.Enricher = registry
 		wantCalls := int32(5)
+		wantRetries := "0"
 		if mode == "per-post" {
 			// Preserve the old pipeline path with the same resolver and fixture.
 			enricher = taxonomyEnrichFunc(registry.Enrich)
 			wantCalls = 200
+		} else {
+			retryOnce.Store(true)
+			wantCalls++
+			wantRetries = "1"
 		}
 		p := New(gdl.New(provider, lists), mapper, galleryClient, provider, dir, sitestate.New(), nil, nil, enricher)
 		if err := os.Remove(cfg.GalleryDL.ArchivePath); err != nil && !os.IsNotExist(err) {
@@ -466,7 +477,8 @@ main()
 		for _, check := range []struct {
 			got, want map[string]string
 		}{
-			{preflight, map[string]string{"source": "derpibooru", "posts": "200", "approved": "198", "blacklisted": "1", "refused": "1"}},
+			{preflight, map[string]string{"source": "derpibooru", "posts": "200", "approved": "198", "blacklisted": "1", "refused": "1",
+				"complete": "true", "canceled": "false", "taxonomy_attempts": strconv.Itoa(int(wantCalls)), "taxonomy_429": wantRetries, "taxonomy_retries": wantRetries}},
 			{transfer, map[string]string{"files": "197", "archive_skips": "0", "file_bytes": "2955", "size_errors": "0", "sleep": "0", "sleep_request": "0-0.001", "failed": "false", "canceled": "false"}},
 			{ingest, map[string]string{"transfer_rows": "197", "canceled": "false"}},
 		} {
@@ -478,6 +490,18 @@ main()
 		}
 		for _, stage := range []map[string]string{preflight, transfer, ingest} {
 			strictTimingDuration(t, stage, "duration")
+		}
+		for _, key := range []string{"taxonomy_http", "taxonomy_slot_wait", "taxonomy_retry_wait"} {
+			strictTimingDuration(t, preflight, key)
+		}
+		if wantRetries == "1" {
+			retry := strictTimingFields(t, logs, job.ID, "taxonomy-retry")
+			if retry["status"] != "429" || retry["delay"] != "1s" || retry["retry_after"] != "true" {
+				t.Errorf("unexpected retry diagnostic: %v", retry)
+			}
+			if got := strictTimingDuration(t, preflight, "taxonomy_retry_wait"); got < time.Second {
+				t.Errorf("retry wait = %s, want at least 1s", got)
+			}
 		}
 		for _, key := range []string{"manifest", "version_check", "filter_probe", "result_verification"} {
 			strictTimingDuration(t, transfer, key)

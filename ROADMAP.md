@@ -63,6 +63,8 @@ The native Mebooru **Loader** tab exposes Meloader's Queue, Watches, and PTR con
 
 Improve acquisition diagnostics, retry visibility, structured timing, failure distinctions and regression monitoring without sacrificing snappiness.
 
+Start with job-scoped strict Derpibooru preflight diagnostics. Use the request, retry-wait, and outcome counts to distinguish source delays from local processing. [Diagnostic fields and loopback regression](docs/validation/loader-integration.md#strict-download-timing)
+
 ### 7. Broader Mebooru library experience
 
 Develop browsing, review, organization, relationships and cross-source vocabulary consistency as distinct capabilities beyond source-taxonomy interpretation.

@@ -179,7 +179,8 @@ func TestDerpibooruBatchRetryExhaustionLeavesOtherChunksUsable(t *testing.T) {
 	for id := 1; id <= 51; id++ {
 		posts = append(posts, map[string]any{"category": "derpibooru", "tags": []string{fmt.Sprintf("fixture %d", id)}, "tag_ids": []int{id}})
 	}
-	errs := d.EnrichBatch(t.Context(), "derpibooru", posts)
+	ctx, stats := WithRequestStats(t.Context(), 41)
+	errs := d.EnrichBatch(ctx, "derpibooru", posts)
 	for i, err := range errs[:50] {
 		if err == nil || !strings.Contains(err.Error(), "HTTP 429") {
 			t.Errorf("post %d error = %v, want HTTP 429", i+1, err)
@@ -190,6 +191,11 @@ func TestDerpibooruBatchRetryExhaustionLeavesOtherChunksUsable(t *testing.T) {
 	}
 	if got := attempts.Load(); got != derpibooruMaxAttempts+1 {
 		t.Fatalf("made %d attempts, want %d", got, derpibooruMaxAttempts+1)
+	}
+	summary := stats.Summary()
+	if summary.Attempts != derpibooruMaxAttempts+1 || summary.RateLimited != derpibooruMaxAttempts ||
+		summary.Retries != derpibooruMaxAttempts-1 || summary.HTTPTime <= 0 {
+		t.Fatalf("unexpected request summary: %+v", summary)
 	}
 }
 

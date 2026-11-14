@@ -59,6 +59,10 @@ Meloader logs strict acquisition timing at `info` with a queue job ID on each st
 
 Transfer `file_bytes` counts the final sizes of newly landed, evidence-verified files, excluding archive skips. A nonzero `size_errors` makes that count partial. The configured `sleep` and `sleep_request` values are in seconds. `extractor_default` means the managed config leaves that value to gallery-dl. The measurements do not isolate HTTP transfer time, the first media request, or time spent asleep. Keep the VPN and pacing settings consistent with the earlier live run, and compare the stage durations alongside the number of new files and their total bytes.
 
+For strict Derpibooru jobs, `strict-preflight` also reports the number of taxonomy HTTP attempts, 429 responses, and retries, along with cumulative HTTP time to response headers, time waiting for the resolver's request slot, and time spent in retry waits. Each `taxonomy-retry` line appears before the wait, with the same queue job ID, HTTP status, planned delay, and whether the source supplied a valid `Retry-After`. A preflight interrupted during this work reports `complete=false`, `canceled=true`, and partial counts. These counters cover requests made by the resolver for this preflight, and exclude gallery-dl and ingest.
+
+In the 200-post loopback regression, the batched path recovered from one 429 and logged six taxonomy attempts, one 429, and one retry. It still created 197 images. The blacklisted post, the post with unverified taxonomy, and the post whose tags changed each made zero media requests.
+
 **Browser — Mebooru.** Use the previous safe Derpibooru job in `Audit_A` and click **Get next 200** once. Keep strict blacklist verification enabled. The current search can shift as posts are added, so record any archive skips. Collect the completed queue counts and the timing lines for the new job ID. A continuation measures a new window under the current cache conditions.
 
 ## Live Mac timing and archive replay

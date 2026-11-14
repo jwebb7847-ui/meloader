@@ -137,7 +137,21 @@ func (p *Processor) fetchStrict(ctx context.Context, job, snap *queue.Job, resol
 	// result as an archive skip on the normal acquisition path.
 	withheld := make(map[int]string)
 	blacklisted := 0
-	verdicts := p.strictWindowVerdicts(ctx, resolved, site, rules)
+	taxonomyCtx, requestStats := taxonomy.WithRequestStats(ctx, snap.ID)
+	preflightLogged := false
+	logPreflight := func() {
+		requests := requestStats.Summary()
+		logx.Infof("perf: job=%d stage=strict-preflight source=%s duration=%s posts=%d approved=%d blacklisted=%d refused=%d complete=%t canceled=%t taxonomy_attempts=%d taxonomy_429=%d taxonomy_retries=%d taxonomy_http=%s taxonomy_slot_wait=%s taxonomy_retry_wait=%s",
+			snap.ID, site, time.Since(preflightStarted).Round(time.Millisecond), len(resolved), len(approved), blacklisted, len(withheld)-blacklisted,
+			preflightLogged, ctx.Err() != nil, requests.Attempts, requests.RateLimited, requests.Retries,
+			requests.HTTPTime.Round(time.Millisecond), requests.SlotWait.Round(time.Millisecond), requests.RetryWait.Round(time.Millisecond))
+	}
+	defer func() {
+		if !preflightLogged {
+			logPreflight()
+		}
+	}()
+	verdicts := p.strictWindowVerdicts(taxonomyCtx, resolved, site, rules)
 	for i, item := range resolved {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -162,8 +176,8 @@ func (p *Processor) fetchStrict(ctx context.Context, job, snap *queue.Job, resol
 			approved = append(approved, item)
 		}
 	}
-	logx.Infof("perf: job=%d stage=strict-preflight source=%s duration=%s posts=%d approved=%d blacklisted=%d refused=%d",
-		snap.ID, site, time.Since(preflightStarted).Round(time.Millisecond), len(resolved), len(approved), blacklisted, len(withheld)-blacklisted)
+	preflightLogged = true
+	logPreflight()
 	if len(approved) == 0 {
 		if listErr != nil {
 			p.markCutShort(job, snap, listErr, snap.Offset+len(resolved))
