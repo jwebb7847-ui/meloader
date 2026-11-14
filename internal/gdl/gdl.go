@@ -417,15 +417,14 @@ func firstPostMeta(data []byte) (map[string]any, error) {
 // The download always follows Message.Queue handoffs; deep only moves the
 // window to --chapter-range.
 func (t *Tool) Download(ctx context.Context, url, rng, workDir string, archive Archive, onFile func(Downloaded), deep bool) ([]Downloaded, error) {
-	dls, err := t.download(ctx, url, rng, workDir, archive, onFile, deep, "", t.binary())
+	dls, err := t.download(ctx, url, rng, workDir, archive, onFile, deep, "", t.binary(), t.configArgs())
 	return dls, t.redact(err)
 }
 
-func (t *Tool) download(ctx context.Context, url, rng, workDir string, archive Archive, onFile func(Downloaded), deep bool, gate, bin string) ([]Downloaded, error) {
+func (t *Tool) download(ctx context.Context, url, rng, workDir string, archive Archive, onFile func(Downloaded), deep bool, gate, bin string, args []string) ([]Downloaded, error) {
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
 		return nil, &outcome.CodedError{Code: outcome.ErrCodeDownloadFailed, Msg: err.Error()}
 	}
-	args := t.configArgs()
 	if gate == "" {
 		args = append(args, downloadArgs(workDir, rng, url, archive, deep)...)
 	} else {

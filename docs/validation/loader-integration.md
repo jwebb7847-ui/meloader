@@ -44,3 +44,19 @@ The first download is gated on strict verification of the window. The timing ide
 Strict Derpibooru acquisition now deduplicates uncached tag lookups across the current window and requests up to 50 distinct IDs per call. Every post still checks its own source identity, rating, taxonomy, aliases and blacklist before gallery-dl may request media. An omitted record uses the existing exact lookup. Contradictory evidence and exhausted retries withhold the affected posts.
 
 The gallery-dl 1.32.19 loopback regression used the same 200 posts and simulated 10 ms of latency per taxonomy request. Cross-post batching reduced taxonomy calls from 200 to five. Time to the first media request was about 3.69 seconds for the per-post path and 1.39 seconds for the batched path in one run. Both paths produced 197 creates, one blacklist skip and two failures. The alias-blocked post, the post with unverified taxonomy, and the post whose tags changed between listing and download made zero media requests. The taxonomy parity test also verified zero requests with a warm cache. These timings are fixture results. Live Derpibooru and VPN timing still varies with rate limits and media transfer.
+
+## Strict download timing
+
+Meloader logs strict acquisition timing at `info` with a queue job ID on each stage. Times are wall-clock measurements. A window that rejects every post stops after `strict-preflight`.
+
+| Stage | What the log measures |
+| --- | --- |
+| `resolve` | Initial source listing. The count can include the one extra record used to detect another page. |
+| `strict-preflight` | Rule loading, source evidence and taxonomy verification, and blacklist decisions across the capped window. `approved` counts posts eligible for the transfer pass. The transfer can still skip archived posts and withhold posts whose evidence changed. |
+| `strict-transfer` | Manifest generation, pinned gallery-dl version check, filter probes, the gallery-dl download run, and final evidence comparison. `download_process` includes re-listing, pacing, retries, transfer, and subprocess output handling. `first_file` is elapsed from the start of that run to its first completed file with a readable sidecar. It is `none` for an archive-only window. |
+| `strict-ingest` | Processing the download results, including local metadata handling, mapping, and Mebooru uploads. `transfer_rows` includes archive skips reported by gallery-dl. |
+| `total` | Worker time for the complete job, including stages outside the strict path measurements. |
+
+Transfer `file_bytes` counts the final sizes of newly landed, evidence-verified files, excluding archive skips. A nonzero `size_errors` makes that count partial. The configured `sleep` and `sleep_request` values are in seconds. `extractor_default` means the managed config leaves that value to gallery-dl. The measurements do not isolate HTTP transfer time, the first media request, or time spent asleep. Keep the VPN and pacing settings consistent with the earlier live run, and compare the stage durations alongside the number of new files and their total bytes.
+
+**Browser — Mebooru.** Use the previous safe Derpibooru job in `Audit_A` and click **Get next 200** once. Keep strict blacklist verification enabled. The current search can shift as posts are added, so record any archive skips. Collect the completed queue counts and the timing lines for the new job ID. A continuation measures a new window under the current cache conditions.

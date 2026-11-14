@@ -1,15 +1,18 @@
 package pipeline
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -22,6 +25,7 @@ import (
 	"github.com/monbooru/monloader/internal/monbooru"
 	"github.com/monbooru/monloader/internal/outcome"
 	"github.com/monbooru/monloader/internal/queue"
+	"github.com/monbooru/monloader/internal/shared/logx"
 	"github.com/monbooru/monloader/internal/sitestate"
 	"github.com/monbooru/monloader/internal/taxonomy"
 )
@@ -75,6 +79,14 @@ func TestStrictBlacklistGalleryDLMediaBoundary(t *testing.T) {
 	if galleryDL == "" {
 		t.Skip("set MELOADER_STRICT_TEST_GDL to a gallery-dl 1.32.19 virtualenv executable")
 	}
+	var timingLogs bytes.Buffer
+	originalOutput, originalLevel := log.Writer(), logx.Get()
+	log.SetOutput(&timingLogs)
+	logx.Set("info")
+	t.Cleanup(func() {
+		log.SetOutput(originalOutput)
+		logx.Set(originalLevel)
+	})
 	// The wrapper substitutes only source metadata. The real gallery-dl
 	// CLI, booru extractors, file predicate, archive and HTTP downloader run.
 	binDir := filepath.Dir(galleryDL)
@@ -196,7 +208,11 @@ main()
 	// or overwrite the URL used by the strict download predicate.
 	cfg.GalleryDL.RawConfig = `{
 		"keywords-global":{"meloader_verified_media_url":"https://example.invalid/override.jpg"},
-		"extractor":{"danbooru":{"keywords":{"tags":["portrait"],"tags_general":["portrait"]}}}
+		"extractor":{
+			"sleep":0.05,
+			"danbooru":{"keywords":{"tags":["portrait"],"tags_general":["portrait"]}},
+			"derpibooru":{"sleep":0,"search":{"sleep-request":[0,0.001]},"api-key":"timing-fixture-secret"}
+		}
 	}`
 	provider := config.NewProvider(cfg)
 	mapper, err := mapping.New(provider, "")
@@ -343,6 +359,12 @@ main()
 		t.Errorf("media requests=%v, want only the explicit nonviolent controls", paths)
 	}
 	lock.Unlock()
+	for job := int64(2); job <= 3; job++ {
+		transfer := strictTimingFields(t, timingLogs.String(), job, "strict-transfer")
+		if transfer["first_file"] != "none" || transfer["files"] != "0" || transfer["archive_skips"] != "1" || transfer["file_bytes"] != "0" {
+			t.Errorf("archive-only timing for job %d = %v", job, transfer)
+		}
+	}
 
 	if err := provider.Update(func(cfg *config.Config) error {
 		cfg.Tags.Blacklist = []string{"batch-block"}
@@ -377,6 +399,7 @@ main()
 		lock.Lock()
 		paths, firstMedia = nil, time.Time{}
 		lock.Unlock()
+		timingLogs.Reset()
 		start := time.Now()
 		job := &queue.Job{ID: 10, URL: "https://derpibooru.org/search?q=batch_fixture", Gallery: "Audit_A", MaxItems: 200}
 		if err := p.processDownload(t.Context(), job, job.Snapshot()); err != nil {
@@ -413,7 +436,67 @@ main()
 				t.Fatalf("%s: unexpected media request %q", mode, path)
 			}
 		}
+		logs := timingLogs.String()
+		if strings.Contains(logs, "timing-fixture-secret") {
+			t.Fatal("timing exposed raw gallery-dl configuration")
+		}
+		preflight := strictTimingFields(t, logs, job.ID, "strict-preflight")
+		transfer := strictTimingFields(t, logs, job.ID, "strict-transfer")
+		ingest := strictTimingFields(t, logs, job.ID, "strict-ingest")
+		for _, check := range []struct {
+			got, want map[string]string
+		}{
+			{preflight, map[string]string{"source": "derpibooru", "posts": "200", "approved": "198", "blacklisted": "1", "refused": "1"}},
+			{transfer, map[string]string{"files": "197", "archive_skips": "0", "file_bytes": "2955", "size_errors": "0", "sleep": "0", "sleep_request": "0-0.001", "failed": "false", "canceled": "false"}},
+			{ingest, map[string]string{"transfer_rows": "197", "canceled": "false"}},
+		} {
+			for key, want := range check.want {
+				if got := check.got[key]; got != want {
+					t.Errorf("%s: %s=%q, want %q", mode, key, got, want)
+				}
+			}
+		}
+		for _, stage := range []map[string]string{preflight, transfer, ingest} {
+			strictTimingDuration(t, stage, "duration")
+		}
+		for _, key := range []string{"manifest", "version_check", "filter_probe", "result_verification"} {
+			strictTimingDuration(t, transfer, key)
+		}
+		if strictTimingDuration(t, transfer, "first_file") > strictTimingDuration(t, transfer, "download_process") {
+			t.Error("first file appeared after the download process ended")
+		}
+		for _, line := range strings.Split(logs, "\n") {
+			if strings.Contains(line, " stage=strict-") {
+				t.Log(line)
+			}
+		}
 		t.Logf("%s: 200 posts, %d taxonomy requests, taxonomy handler time %s, first media %s, total %s",
 			mode, taxonomyCalls.Load(), time.Duration(taxonomyTime.Load()), first.Sub(start), time.Since(start))
 	}
+}
+
+func strictTimingFields(t *testing.T, logs string, job int64, stage string) map[string]string {
+	t.Helper()
+	prefix := "perf: job=" + strconv.FormatInt(job, 10) + " stage=" + stage + " "
+	for _, line := range strings.Split(logs, "\n") {
+		if _, data, found := strings.Cut(line, prefix); found {
+			fields := make(map[string]string)
+			for _, field := range strings.Fields(data) {
+				key, value, _ := strings.Cut(field, "=")
+				fields[key] = value
+			}
+			return fields
+		}
+	}
+	t.Fatalf("missing timing for job %d stage %s", job, stage)
+	return nil
+}
+
+func strictTimingDuration(t *testing.T, fields map[string]string, key string) time.Duration {
+	t.Helper()
+	duration, err := time.ParseDuration(fields[key])
+	if err != nil || duration < 0 {
+		t.Fatalf("invalid timing %s=%q", key, fields[key])
+	}
+	return duration
 }

@@ -9,10 +9,12 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/monbooru/monloader/internal/config"
 	"github.com/monbooru/monloader/internal/kwdict"
 	"github.com/monbooru/monloader/internal/outcome"
+	"github.com/monbooru/monloader/internal/shared/logx"
 )
 
 const strictMediaURLKey = "meloader_verified_media_url"
@@ -120,11 +122,23 @@ func strictDownloadArgs(workDir, rng, url string, archive Archive, gate string) 
 	return append(args, "--", url)
 }
 
-func (t *Tool) DownloadStrict(ctx context.Context, url, rng, workDir string, archive Archive, onFile func(Downloaded), approved []Item) ([]Downloaded, error) {
+func (t *Tool) DownloadStrict(ctx context.Context, url, rng, workDir string, archive Archive, onFile func(Downloaded), approved []Item) (_ []Downloaded, transferErr error) {
 	if len(approved) == 0 {
 		return nil, nil
 	}
+	job, logTiming := ctx.Value(strictDownloadJobKey{}).(int64)
+	logTiming = logTiming && logx.Enabled(logx.LevelInfo)
+	timing := strictDownloadTiming{
+		manifest: "not_run", version: "not_run", probe: "not_run",
+		process: "not_run", firstFile: "none", verification: "not_run",
+		fileSleep: "unknown", requestSleep: "unknown",
+	}
+	started := time.Now()
+	if logTiming {
+		defer func() { timing.log(job, started, transferErr != nil, ctx.Err() != nil) }()
+	}
 	gate, err := strictGate(workDir, approved)
+	timing.manifest = elapsed(started)
 	if err != nil {
 		return nil, strictTransferError(err.Error())
 	}
@@ -133,20 +147,43 @@ func (t *Tool) DownloadStrict(ctx context.Context, url, rng, workDir string, arc
 	// Exercise the exact predicate first, against a metadata-only fixture
 	// that would produce a file message without the gate.
 	bin := t.binary()
+	stage := time.Now()
 	version, err := runBinary(ctx, bin, "--version")
+	timing.version = elapsed(stage)
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
 	if err != nil || version.exitCode != 0 || strings.TrimSpace(string(version.stdout)) != "1.32.19" {
 		return nil, strictTransferError("strict blacklist requires gallery-dl 1.32.19")
 	}
-	if err := verifyStrictGate(ctx, bin, workDir, gate); err != nil {
+	stage = time.Now()
+	err = verifyStrictGate(ctx, bin, workDir, gate)
+	timing.probe = elapsed(stage)
+	if err != nil {
 		return nil, err
 	}
-	results, err := t.download(ctx, url, rng, workDir, archive, onFile, false, gate, bin)
+	args := t.configArgs()
+	if logTiming {
+		timing.fileSleep, timing.requestSleep = strictConfiguredPacing(args, approved[0])
+	}
+	stage = time.Now()
+	if logTiming {
+		report := onFile
+		onFile = func(d Downloaded) {
+			if timing.firstFile == "none" {
+				timing.firstFile = elapsed(stage)
+			}
+			if report != nil {
+				report(d)
+			}
+		}
+	}
+	results, err := t.download(ctx, url, rng, workDir, archive, onFile, false, gate, bin, args)
+	timing.process = elapsed(stage)
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
+	stage = time.Now()
 	byID := make(map[string]map[string]any, len(approved))
 	for _, item := range approved {
 		byID[item.ID] = strictEvidence(item)
@@ -156,8 +193,13 @@ func (t *Tool) DownloadStrict(ctx context.Context, url, rng, workDir string, arc
 		item.MediaURL = kwdict.String(result.Meta, strictMediaURLKey)
 		delete(result.Meta, strictMediaURLKey)
 		if !item.HasStrictIdentity() || !reflect.DeepEqual(byID[item.ID], strictEvidence(item)) {
+			timing.verification = elapsed(stage)
 			return nil, strictTransferError("download metadata did not match the verified post")
 		}
+	}
+	timing.verification = elapsed(stage)
+	if logTiming {
+		timing.countFiles(results)
 	}
 	return results, t.redact(err)
 }
