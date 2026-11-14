@@ -21,6 +21,19 @@ import (
 	"github.com/monbooru/monloader/internal/mapping"
 )
 
+// Test records stand in for the tag API, which emits an empty array when
+// a tag has no incoming aliases.
+func (r tagSearchResponse) MarshalJSON() ([]byte, error) {
+	type response tagSearchResponse
+	r.Tags = slices.Clone(r.Tags)
+	for i := range r.Tags {
+		if r.Tags[i].Aliases == nil {
+			r.Tags[i].Aliases = []string{}
+		}
+	}
+	return json.Marshal(response(r))
+}
+
 func TestDerpibooruFilingAndBlacklistCompatibility(t *testing.T) {
 	records := []tagRecord{
 		{ID: 1, Name: "safe", Category: tagCategory{value: "rating"}},

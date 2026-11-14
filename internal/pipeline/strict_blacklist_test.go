@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -21,6 +22,7 @@ import (
 	"github.com/monbooru/monloader/internal/outcome"
 	"github.com/monbooru/monloader/internal/queue"
 	"github.com/monbooru/monloader/internal/sitestate"
+	"github.com/monbooru/monloader/internal/taxonomy"
 )
 
 func TestStrictBlacklistVerdict(t *testing.T) {
@@ -116,18 +118,22 @@ from gallery_dl.extractor import danbooru, e621, philomena
 def posts(self):
     listing = (
         (41, ["safe", "rainbow dash", "violence"], 41),
-        (42, ["explicit", "rainbow dash"], 42),
-        (43, ["safe", "rainbow dash"], 43),
+        (42, ["explicit", "dashie"], 42),
+        (43, ["safe", "unverified"], 43),
         (44, ["safe", "rainbow dash"], 44),
         (45, ["safe", "rainbow dash"], 45),
+        (46, ["safe", "dashie", "violence"], 47),
+        (47, ["safe", "rd", "violence"], 48),
     )
     if "-j" not in sys.argv:
         listing = (
             (99, ["safe", "rainbow dash", "violence"], 99),
             (44, ["safe", "rainbow dash", "violence"], 44),
             (45, ["safe", "rainbow dash"], 46),
-            (42, ["explicit", "rainbow dash"], 42),
-            (43, ["safe", "rainbow dash"], 43),
+            (42, ["explicit", "dashie"], 42),
+            (43, ["safe", "unverified"], 43),
+            (46, ["safe", "dashie", "violence"], 47),
+            (47, ["safe", "rd", "violence"], 48),
         )
     for ident, tags, media_id in listing:
         yield {"id": ident, "tags": tags, "created_at": "2020-01-01T00:00:00Z",
@@ -180,45 +186,76 @@ main()
 	if err := gdl.WriteManagedConfig(cfg, lists); err != nil {
 		t.Fatal(err)
 	}
-	resolver := taxonomyEnrichFunc(func(_ context.Context, meta map[string]any) error {
-		if fmt.Sprint(meta["id"]) == "43" {
-			return errors.New("taxonomy unavailable")
+	tagRecords := map[string]json.RawMessage{
+		"safe":         json.RawMessage(`{"id":1,"name":"safe","category":"rating","aliased_tag":null,"aliases":[]}`),
+		"explicit":     json.RawMessage(`{"id":2,"name":"explicit","category":"rating","aliased_tag":null,"aliases":[]}`),
+		"rainbow dash": json.RawMessage(`{"id":39229,"name":"rainbow dash","slug":"rainbow+dash","category":"character","aliased_tag":null,"aliases":["rd","rainbowdash","dashie"]}`),
+		"dashie":       json.RawMessage(`{"id":24568,"name":"dashie","slug":"dashie","category":null,"aliased_tag":"rainbow+dash","aliases":[]}`),
+		"rd":           json.RawMessage(`{"id":63932,"name":"rd","slug":"rd","category":null,"aliased_tag":"rainbow+dash","aliases":[]}`),
+		"violence":     json.RawMessage(`{"id":3,"name":"violence","category":null,"aliased_tag":null,"aliases":[]}`),
+		"unverified":   json.RawMessage(`{"id":4,"name":"unverified","category":null}`),
+	}
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/json/tags/rainbow+dash" {
+			_ = json.NewEncoder(w).Encode(map[string]json.RawMessage{"tag": tagRecords["rainbow dash"]})
+			return
 		}
-		tags := slices.Clone(meta["tags"].([]any))
-		for i, tag := range tags {
-			if tag == "rainbow dash" {
-				tags[i] = "character:rainbow dash"
-			}
+		name := r.URL.Query().Get("q")
+		if rec, ok := tagRecords[name]; ok {
+			_ = json.NewEncoder(w).Encode(map[string][]json.RawMessage{"tags": {rec}})
+			return
 		}
-		meta["tags"] = tags
-		return nil
-	})
-	p := New(gdl.New(provider, lists), mapper, monbooru.New(provider), provider, dir, sitestate.New(), nil, nil, resolver)
-	for round := 1; round <= 2; round++ {
-		job := &queue.Job{ID: int64(round), URL: "https://derpibooru.org/search?q=rainbow+dash", Gallery: "Audit_A", MaxItems: 5}
+		t.Errorf("unexpected taxonomy request: %s", r.URL)
+		http.NotFound(w, r)
+	}))
+	defer source.Close()
+	galleryClient := monbooru.New(provider)
+	originalTransport := http.DefaultTransport
+	http.DefaultTransport = derpibooruFixtureTransport{server: source, fallback: originalTransport}
+	defer func() { http.DefaultTransport = originalTransport }()
+	resolver, err := taxonomy.NewDerpibooru("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := New(gdl.New(provider, lists), mapper, galleryClient, provider, dir, sitestate.New(), nil, nil, resolver)
+	for round, rule := range []string{"character:rainbow_dash violence", "character:dashie violence", "character:rd violence"} {
+		if err := provider.Update(func(cfg *config.Config) error {
+			cfg.Tags.Blacklist = []string{rule}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		job := &queue.Job{ID: int64(round + 1), URL: "https://derpibooru.org/search?q=rainbow+dash", Gallery: "Audit_A", MaxItems: 7}
 		if err := p.processDownload(context.Background(), job, job.Snapshot()); err != nil {
 			t.Fatal(err)
 		}
 		items := job.Snapshot().Items
-		if len(items) != 5 {
+		if len(items) != 7 {
 			t.Fatalf("items=%+v", items)
 		}
 		good := outcome.Created
-		if round == 2 {
+		if round > 0 {
 			good = outcome.SkippedArchive
 		}
-		want := []outcome.Outcome{outcome.SkippedBlacklist, good, outcome.Failed, outcome.Failed, outcome.Failed}
+		want := []outcome.Outcome{outcome.SkippedBlacklist, good, outcome.Failed, outcome.Failed, outcome.Failed,
+			outcome.SkippedBlacklist, outcome.SkippedBlacklist}
 		for i, item := range items {
 			if item.Outcome != want[i] {
 				t.Errorf("round %d post %s = %+v, want %s", round, item.PostID, item, want[i])
 			}
 		}
-		if !strings.Contains(items[2].Error, "taxonomy unavailable") {
+		if !strings.Contains(items[2].Error, "no verified alias fields") {
 			t.Errorf("missing taxonomy diagnostic: %+v", items[2])
 		}
 	}
+	if err := provider.Update(func(cfg *config.Config) error {
+		cfg.Tags.Blacklist = []string{"character:rainbow_dash violence"}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 	for i, path := range []string{"/untagged.jpg", "/untagged"} {
-		job := &queue.Job{ID: int64(i + 3), URL: media.URL + path, Gallery: "Audit_A"}
+		job := &queue.Job{ID: int64(i + 4), URL: media.URL + path, Gallery: "Audit_A"}
 		if err := p.processDownload(context.Background(), job, job.Snapshot()); err == nil {
 			t.Errorf("direct link %s was accepted", path)
 		}
@@ -232,7 +269,7 @@ main()
 		{"https://e621.net/posts/61", outcome.SkippedBlacklist},
 		{"https://e621.net/posts/62", outcome.Created},
 	} {
-		job := &queue.Job{ID: int64(i + 5), URL: tc.url, Gallery: "Audit_A"}
+		job := &queue.Job{ID: int64(i + 6), URL: tc.url, Gallery: "Audit_A"}
 		if err := p.processDownload(context.Background(), job, job.Snapshot()); err != nil {
 			t.Fatalf("%s: %v", tc.url, err)
 		}

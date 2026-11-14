@@ -174,12 +174,12 @@ func (m *Mapper) matchBlacklist(meta map[string]any, profile Profile, rules []bl
 		return "", false
 	}
 	category := kwdict.String(meta, "category")
-	m.eachTag(category, profile, meta, func(_, _, s, legacy string) {
-		for _, read := range postBlacklistReads(profile, s, legacy, false) {
+	m.eachTag(category, profile, meta, func(_, _, s, legacy string, aliases []string) {
+		for _, read := range postBlacklistReads(profile, s, legacy, aliases, false) {
 			tags = append(tags, splitPostTag(read))
 		}
-	}, func(_, _, s, legacy string) {
-		for _, read := range postBlacklistReads(profile, s, legacy, true) {
+	}, func(_, _, s, legacy string, aliases []string) {
+		for _, read := range postBlacklistReads(profile, s, legacy, aliases, true) {
 			tags = append(tags, splitPostTag(read))
 		}
 	})
@@ -201,17 +201,28 @@ func blacklistReads(profile Profile, tag string) []string {
 	return reads
 }
 
-func postBlacklistReads(profile Profile, filed, legacy string, dropped bool) []string {
+func postBlacklistReads(profile Profile, filed, legacy string, aliases []string, dropped bool) []string {
+	var reads []string
 	if dropped {
-		reads := []string{normalizeFiledTag(filed)}
+		reads = []string{normalizeFiledTag(filed)}
 		if legacy != "" {
 			reads = append(reads, normalizeFiledTag(legacy))
 		}
+	} else {
+		reads = blacklistReads(profile, filed)
+		if legacy != "" {
+			reads = append(reads, blacklistReads(profile, legacy)...)
+		}
+	}
+	if len(aliases) == 0 {
 		return reads
 	}
-	reads := blacklistReads(profile, filed)
-	if legacy != "" {
-		reads = append(reads, blacklistReads(profile, legacy)...)
+	category := splitPostTag(normalizeFiledTag(filed)).category
+	for _, alias := range aliases {
+		read := normalizeFiledTag(filedTag(category, alias))
+		if !slices.Contains(reads, read) {
+			reads = append(reads, read)
+		}
 	}
 	return reads
 }

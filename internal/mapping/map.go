@@ -361,7 +361,7 @@ func (m *Mapper) Map(meta map[string]any) PushFields {
 	var tags []string
 	drop := m.cfg.Current().Tags.DropCategories
 	var withheld []string
-	add := func(_, _, s, legacy string) {
+	add := func(_, _, s, legacy string, _ []string) {
 		listed := normalizeFiledTag(s)
 		s = applyFiledTagRule(profile.TagRules, listed, legacy)
 		if s == "" && listed != "" {
@@ -371,7 +371,7 @@ func (m *Mapper) Map(meta map[string]any) PushFields {
 			tags = append(tags, s)
 		}
 	}
-	dropped := func(_, _, s, _ string) { withheld = append(withheld, normalizeFiledTag(s)) }
+	dropped := func(_, _, s, _ string, _ []string) { withheld = append(withheld, normalizeFiledTag(s)) }
 
 	m.eachTag(category, profile, meta, add, dropped)
 
@@ -404,13 +404,15 @@ func (m *Mapper) Map(meta map[string]any) PushFields {
 	return pf
 }
 
+type visitPostTag func(field, listed, tag, legacy string, aliases []string)
+
 // eachTag keeps the source field and spelling alongside the mapped category
 // before tag rules run. dropped receives the tag's default category.
-func (m *Mapper) eachTag(category string, profile Profile, meta map[string]any, visit, dropped func(field, listed, tag, legacy string)) {
-	named := func(next func(field, listed, tag, legacy string)) func(field, listed, tag, legacy string) {
-		return func(field, listed, tag, legacy string) {
+func (m *Mapper) eachTag(category string, profile Profile, meta map[string]any, visit, dropped visitPostTag) {
+	named := func(next visitPostTag) visitPostTag {
+		return func(field, listed, tag, legacy string, aliases []string) {
 			if normalizeFiledTag(tag) != "" {
-				next(field, listed, tag, legacy)
+				next(field, listed, tag, legacy, aliases)
 			}
 		}
 	}
@@ -427,7 +429,7 @@ func (m *Mapper) eachTag(category string, profile Profile, meta map[string]any, 
 					}
 				}
 			}
-			m.fileTag(category, profile, "tags", tag.Listed, key, tag.Category, name, tag.LegacyBlacklistName, visit, dropped)
+			m.fileTag(category, profile, "tags", tag.Listed, key, tag.Category, name, tag.LegacyBlacklistName, tag.Aliases, visit, dropped)
 		}
 		return
 	}
@@ -443,13 +445,13 @@ func (m *Mapper) eachTag(category string, profile Profile, meta map[string]any, 
 		if !keep {
 			if base, ok := baseCategory(suffix); ok {
 				for _, name := range parseTagField(meta["tags_"+suffix]) {
-					dropped("tags_"+suffix, name, formatTag(base, name), "")
+					dropped("tags_"+suffix, name, formatTag(base, name), "", nil)
 				}
 			}
 			continue
 		}
 		for _, name := range parseTagField(meta["tags_"+suffix]) {
-			visit("tags_"+suffix, name, formatTag(cat, name), "")
+			visit("tags_"+suffix, name, formatTag(cat, name), "", nil)
 		}
 	}
 	if flat {
@@ -468,28 +470,28 @@ func (m *Mapper) eachTag(category string, profile Profile, meta map[string]any, 
 			} else if _, row := m.categoryOverride(category, profile, ns); row && rest != "" {
 				key, sub = ns, rest
 			}
-			m.fileTag(category, profile, "tags", name, key, base, sub, "", visit, dropped)
+			m.fileTag(category, profile, "tags", name, key, base, sub, "", nil, visit, dropped)
 		}
 	}
 
 	if profile.Kind == KindManga {
 		for _, f := range mangaTagFields {
 			for _, name := range parseNameField(meta[f.field]) {
-				m.fileTag(category, profile, f.field, name, f.field, f.category, name, "", visit, dropped)
+				m.fileTag(category, profile, f.field, name, f.field, f.category, name, "", nil, visit, dropped)
 			}
 		}
 	}
 }
 
-func (m *Mapper) fileTag(site string, profile Profile, field, listed, key, base, name, legacy string, visit, dropped func(field, listed, tag, legacy string)) {
+func (m *Mapper) fileTag(site string, profile Profile, field, listed, key, base, name, legacy string, aliases []string, visit, dropped visitPostTag) {
 	to, ok := m.categoryOverride(site, profile, key)
 	switch {
 	case !ok:
-		visit(field, listed, filedTag(base, name), filedTag(base, legacy))
+		visit(field, listed, filedTag(base, name), filedTag(base, legacy), aliases)
 	case to == "":
-		dropped(field, listed, filedTag(base, name), filedTag(base, legacy))
+		dropped(field, listed, filedTag(base, name), filedTag(base, legacy), aliases)
 	default:
-		visit(field, listed, filedTag(to, name), filedTag(to, legacy))
+		visit(field, listed, filedTag(to, name), filedTag(to, legacy), aliases)
 	}
 }
 
