@@ -25,9 +25,9 @@ Keep the network boundary intact: Meloader is the explicitly WAN-capable acquisi
 
 ## Current work and branches
 
-- **Meloader `main`** contains Items 1–3 and the completed parts of Item 4. [PR #5](https://github.com/jwebb7847-ui/meloader/pull/5) merged the stacked taxonomy and source-semantics work at `3aa5aca`. [PR #6](https://github.com/jwebb7847-ui/meloader/pull/6) merged the Derpibooru integrity fixes at `18edb38`. [PR #7](https://github.com/jwebb7847-ui/meloader/pull/7) merged strict blacklist verification at `5bcd092`. PRs #1–#4 record the earlier stacked reviews.
+- **Meloader `main`** contains Items 1–4. [PR #5](https://github.com/jwebb7847-ui/meloader/pull/5) merged the stacked taxonomy and source-semantics work at `3aa5aca`. [PR #6](https://github.com/jwebb7847-ui/meloader/pull/6) merged the Derpibooru integrity fixes at `18edb38`. [PR #7](https://github.com/jwebb7847-ui/meloader/pull/7) merged strict blacklist verification at `5bcd092`. PRs #1–#4 record the earlier stacked reviews.
 - **Mebooru `mebooru-foundation`** contains the fork's library UI work. Its `main` remains the upstream-derived v1.24.0 baseline. See [MEBOORU.md](https://github.com/jwebb7847-ui/mebooru/blob/mebooru-foundation/MEBOORU.md) for the library's direction and baseline.
-- **Next milestone: Item 4.** Resolve the remaining taxonomy and source-adapter decisions.
+- **Next milestone: Item 5.** Design the acquisition interface and how it connects Mebooru to the separate Meloader service.
 
 ## Milestones
 
@@ -49,11 +49,11 @@ Recover authoritative categories when gallery-dl emits flattened tags. Use the s
 - e621 categorized extraction, preview and one live import passed with the generic mapper. Retain **`lore → meta` and `contributor → artist`**. [e621 validation and decision](docs/validation/e621.md)
 - Danbooru automated coverage and authenticated live acceptance passed. Post `294929` mapped `s` to `rating:sensitive` and imported into `Audit_A` with categorized tags and original attribution. [Live Danbooru result](docs/validation/negative-path-throughput.md#8-live-danbooru-acceptance)
 
-### 4. Further booru coverage — next
+### 4. Further booru coverage — complete
 
 [PR #6](https://github.com/jwebb7847-ui/meloader/pull/6) shipped the approved trust and fallback fixes for malformed taxonomy, tag ID verification, and canonical post provenance. The Mac audit confirmed a live import and cache reuse after restart. The [opt-in pre-download blacklist](docs/validation/blacklist-timing.md) in [PR #7](https://github.com/jwebb7847-ui/meloader/pull/7) passed loopback media-request checks and a live Mac audit in `Audit_A`. [PR #8](https://github.com/jwebb7847-ui/meloader/pull/8) merged the [Mac-tested debug-to-Trace URL prefill](docs/validation/blacklist-timing.md#debug-to-trace-prefill) at `b0a0213`.
 
-The filing policy for named original characters and unusual namespaces passed the Mac Trace check in [PR #10](https://github.com/jwebb7847-ui/meloader/pull/10). [Filing and alias evidence](docs/validation/derpibooru-filing.md) records the fixtures and the live Derpibooru alias records. Alias handling must preserve strict pre-download blacklist matches across confirmed spellings.
+The filing policy for named original characters and unusual namespaces passed Mac Trace acceptance in [PR #10](https://github.com/jwebb7847-ui/meloader/pull/10). Verified Derpibooru aliases in [PR #11](https://github.com/jwebb7847-ui/meloader/pull/11) match blacklist rules in both directions and file under the canonical tag. The alias change passed automated media-request checks and live Mac Trace acceptance. [Filing and alias evidence](docs/validation/derpibooru-filing.md)
 
 ### 5. Meloader / Mebooru user integration
 
@@ -88,5 +88,4 @@ Follow the [local audit runbook](docs/validation/local-audit.md) for checkout, c
 
 The [approved architecture defaults](docs/architecture/source-semantics-proposal.md#product-decisions) cover source field outcomes, provenance retention, taxonomy and vocabulary ownership, and the adapter package boundary.
 
-- Decide how to resolve verified Derpibooru aliases for canonical filing and strict blacklist matching, using the confirmed live API payload.
 - Define richer diagnostic fields and retention when a concrete audit or replay use case requires them.

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -60,6 +61,43 @@ type tagRecord struct {
 	Category        tagCategory `json:"category,omitzero"`
 	Namespace       string      `json:"namespace,omitempty"`
 	NameInNamespace string      `json:"name_in_namespace,omitempty"`
+	AliasedTag      string      `json:"aliased_tag"`
+	Aliases         []string    `json:"aliases"`
+	// AliasFieldsKnown distinguishes old cache entries from an empty family.
+	AliasFieldsKnown bool `json:"-"`
+}
+
+func (r *tagRecord) UnmarshalJSON(raw []byte) error {
+	type record tagRecord
+	var decoded struct {
+		record
+		Aliases    json.RawMessage `json:"aliases"`
+		AliasedTag json.RawMessage `json:"aliased_tag"`
+	}
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return err
+	}
+	*r = tagRecord(decoded.record)
+	if decoded.Aliases != nil {
+		if err := json.Unmarshal(decoded.Aliases, &r.Aliases); err != nil {
+			return err
+		}
+	}
+	if decoded.AliasedTag != nil {
+		if err := json.Unmarshal(decoded.AliasedTag, &r.AliasedTag); err != nil {
+			return err
+		}
+	}
+	r.AliasFieldsKnown = r.Aliases != nil && decoded.AliasedTag != nil
+	slices.Sort(r.Aliases)
+	return nil
+}
+
+func (r tagRecord) equal(other tagRecord) bool {
+	return r.ID == other.ID && r.Name == other.Name && r.Slug == other.Slug &&
+		r.Category == other.Category && r.Namespace == other.Namespace &&
+		r.NameInNamespace == other.NameInNamespace && r.AliasedTag == other.AliasedTag &&
+		r.AliasFieldsKnown == other.AliasFieldsKnown && slices.Equal(r.Aliases, other.Aliases)
 }
 
 // Philomena sends null for a tag with no category. Older caches omitted
@@ -93,24 +131,27 @@ func (r tagRecord) validate() error {
 	if r.ID <= 0 || normalizeKey(r.Name) == "" {
 		return fmt.Errorf("invalid Derpibooru tag identity (id %d, name %q)", r.ID, r.Name)
 	}
-	if r.Category.uncategorized {
-		return nil
+	if !r.Category.uncategorized {
+		switch r.Category.value {
+		case "character", "species", "body-type", "oc", "origin",
+			"content-official", "content-fanmade", "error", "spoiler", "rating":
+		case "":
+			return fmt.Errorf("Derpibooru tag %q has a missing or empty category", r.Name)
+		default:
+			return fmt.Errorf("Derpibooru tag %q has an unknown category %q", r.Name, r.Category.value)
+		}
 	}
-	switch r.Category.value {
-	case "character", "species", "body-type", "oc", "origin",
-		"content-official", "content-fanmade", "error", "spoiler", "rating":
-		return nil
-	case "":
-		return fmt.Errorf("Derpibooru tag %q has a missing or empty category", r.Name)
-	default:
-		return fmt.Errorf("Derpibooru tag %q has an unknown category %q", r.Name, r.Category.value)
+	if !r.AliasFieldsKnown {
+		return fmt.Errorf("Derpibooru tag %q has no verified alias fields", r.Name)
 	}
+	return nil
 }
 
 // id is empty when gallery-dl did not supply a usable tag ID.
 type tagLookup struct {
 	name string
 	id   string
+	slug string
 }
 
 func (t tagLookup) checkID(rec tagRecord) error {
@@ -122,6 +163,7 @@ func (t tagLookup) checkID(rec tagRecord) error {
 
 type tagSearchResponse struct {
 	Tags []tagRecord `json:"tags"`
+	Tag  tagRecord   `json:"tag"`
 }
 
 func NewDerpibooru(cachePath string) (*Derpibooru, error) {
@@ -253,10 +295,6 @@ func (d *Derpibooru) Enrich(ctx context.Context, meta map[string]any) error {
 	if len(sourceTags) == 0 {
 		return nil
 	}
-	if err := d.save(); err != nil {
-		return err
-	}
-
 	/*
 		Keep the enriched flat view for rating and metadata consumers. The
 		mapper reads the verified category, name and original spelling from
@@ -275,18 +313,22 @@ func (d *Derpibooru) Enrich(ctx context.Context, meta map[string]any) error {
 	interpreted := make([]kwdict.InterpretedTag, 0, len(sourceTags))
 
 	for i, sourceName := range sourceTags {
-		rec := records[i]
+		rec, aliases, err := d.aliasFamily(ctx, records[i])
+		if err != nil {
+			return err
+		}
 
-		target, name, isRating := derpibooruTarget(
-			rec,
-			sourceName,
-		)
+		nameForFiling := sourceName
+		if records[i].AliasedTag != "" {
+			nameForFiling = rec.Name
+		}
+		target, name, isRating := derpibooruTarget(rec, nameForFiling)
 		if !isRating {
-			tag := kwdict.InterpretedTag{Listed: sourceName, Category: target, Name: name}
+			tag := kwdict.InterpretedTag{Listed: sourceName, Category: target, Name: name, Aliases: aliases}
 			if strings.EqualFold(strings.TrimSpace(rec.Namespace), "oc") {
 				tag.LegacyBlacklistName = strings.TrimSpace(rec.NameInNamespace)
 				if tag.LegacyBlacklistName == "" {
-					tag.LegacyBlacklistName = afterNamespace(sourceName)
+					tag.LegacyBlacklistName = afterNamespace(nameForFiling)
 				}
 			}
 			interpreted = append(interpreted, tag)
@@ -313,6 +355,9 @@ func (d *Derpibooru) Enrich(ctx context.Context, meta map[string]any) error {
 		}
 	}
 
+	if err := d.save(); err != nil {
+		return err
+	}
 	meta["tags"] = rewritten
 	meta[kwdict.InterpretedTagsKey] = interpreted
 
@@ -474,7 +519,7 @@ func (d *Derpibooru) prefillByIDs(ctx context.Context, lookups []tagLookup) erro
 			if err := rec.validate(); err != nil {
 				return err
 			}
-			if old, ok := verified[name]; ok && old != rec {
+			if old, ok := verified[name]; ok && !old.equal(rec) {
 				return fmt.Errorf("Derpibooru returned conflicting records for tag %q (id %s)", name, id)
 			}
 			verified[name] = rec
@@ -492,7 +537,8 @@ func (d *Derpibooru) cached(lookup tagLookup) (tagRecord, bool) {
 
 func (d *Derpibooru) cachedLocked(lookup tagLookup) (tagRecord, bool) {
 	rec, ok := d.cache[lookup.name]
-	return rec, ok && (lookup.id == "" || lookup.id == strconv.FormatInt(rec.ID, 10))
+	return rec, ok && (lookup.id == "" || lookup.id == strconv.FormatInt(rec.ID, 10)) &&
+		(lookup.slug == "" || rec.Slug == lookup.slug)
 }
 
 func (d *Derpibooru) storeRecords(
@@ -504,7 +550,7 @@ func (d *Derpibooru) storeRecords(
 	for key, rec := range records {
 		old, exists := d.cache[key]
 
-		if exists && old == rec {
+		if exists && old.equal(rec) {
 			continue
 		}
 
@@ -628,7 +674,7 @@ func (d *Derpibooru) resolve(ctx context.Context, lookup tagLookup, sourceName s
 		return rec, nil
 	}
 
-	// Only callers asking for the same name and ID share the in-flight result.
+	// Only callers asking for the same identity share the in-flight result.
 	if call, ok := d.inflight[lookup]; ok {
 		d.mu.Unlock()
 		select {
@@ -658,6 +704,22 @@ func (d *Derpibooru) resolve(ctx context.Context, lookup tagLookup, sourceName s
 }
 
 func (d *Derpibooru) fetch(ctx context.Context, lookup tagLookup, sourceName string) (tagRecord, error) {
+	if lookup.slug != "" {
+		pathSlug := strings.ReplaceAll(url.PathEscape(lookup.slug), "+", "%2B")
+		u, err := url.Parse(d.baseURL + "/api/v1/json/tags/" + pathSlug)
+		if err != nil {
+			return tagRecord{}, err
+		}
+		body, err := d.requestTags(ctx, u, 1)
+		if err != nil {
+			return tagRecord{}, err
+		}
+		rec := body.Tag
+		if rec.Slug != lookup.slug || normalizeKey(rec.Name) != lookup.name {
+			return tagRecord{}, fmt.Errorf("Derpibooru alias target does not match slug %q", lookup.slug)
+		}
+		return rec, rec.validate()
+	}
 	records, err := d.search(ctx, sourceName, 50)
 	if err != nil {
 		return tagRecord{}, err
@@ -676,7 +738,7 @@ func (d *Derpibooru) fetch(ctx context.Context, lookup tagLookup, sourceName str
 		if err := rec.validate(); err != nil {
 			return tagRecord{}, err
 		}
-		if matched.ID != 0 && matched != rec {
+		if matched.ID != 0 && !matched.equal(rec) {
 			return tagRecord{}, fmt.Errorf("Derpibooru returned conflicting exact matches for tag %q", sourceName)
 		}
 		matched = rec
@@ -724,21 +786,6 @@ func (d *Derpibooru) search(
 	query string,
 	perPage int,
 ) ([]tagRecord, error) {
-	/*
-		All source requests share the same slot. A normal post now uses
-		one batch request instead of one request per tag, while fallback
-		requests retain the same rate-limit protection.
-	*/
-	select {
-	case d.slots <- struct{}{}:
-		defer func() {
-			<-d.slots
-		}()
-
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
-
 	u, err := url.Parse(
 		d.baseURL + "/api/v1/json/search/tags",
 	)
@@ -763,6 +810,17 @@ func (d *Derpibooru) search(
 	)
 	u.RawQuery = q.Encode()
 
+	body, err := d.requestTags(ctx, u, len(strings.Split(query, " || ")))
+	return body.Tags, err
+}
+
+func (d *Derpibooru) requestTags(ctx context.Context, u *url.URL, terms int) (tagSearchResponse, error) {
+	select {
+	case d.slots <- struct{}{}:
+		defer func() { <-d.slots }()
+	case <-ctx.Done():
+		return tagSearchResponse{}, ctx.Err()
+	}
 	for attempt := 0; attempt < derpibooruMaxAttempts; attempt++ {
 		req, err := http.NewRequestWithContext(
 			ctx,
@@ -771,7 +829,7 @@ func (d *Derpibooru) search(
 			nil,
 		)
 		if err != nil {
-			return nil, err
+			return tagSearchResponse{}, err
 		}
 
 		req.Header.Set(
@@ -786,17 +844,17 @@ func (d *Derpibooru) search(
 			logx.Infof(
 				"perf: taxonomy source=derpibooru, stage=http, attempt=%d, terms=%d, duration=%s, err=%v",
 				attempt+1,
-				len(strings.Split(query, " || ")),
+				terms,
 				time.Since(requestStarted).Round(time.Millisecond),
 				err,
 			)
-			return nil, err
+			return tagSearchResponse{}, err
 		}
 
 		logx.Infof(
 			"perf: taxonomy source=derpibooru, stage=http, attempt=%d, terms=%d, status=%d, duration=%s",
 			attempt+1,
-			len(strings.Split(query, " || ")),
+			terms,
 			resp.StatusCode,
 			time.Since(requestStarted).Round(time.Millisecond),
 		)
@@ -812,13 +870,13 @@ func (d *Derpibooru) search(
 			resp.Body.Close()
 
 			if err != nil {
-				return nil, fmt.Errorf(
+				return tagSearchResponse{}, fmt.Errorf(
 					"decoding Derpibooru response: %w",
 					err,
 				)
 			}
 
-			return body.Tags, nil
+			return body, nil
 		}
 
 		status := resp.StatusCode
@@ -838,7 +896,7 @@ func (d *Derpibooru) search(
 
 		if !retryable ||
 			attempt == derpibooruMaxAttempts-1 {
-			return nil, fmt.Errorf(
+			return tagSearchResponse{}, fmt.Errorf(
 				"Derpibooru returned HTTP %d",
 				status,
 			)
@@ -854,11 +912,11 @@ func (d *Derpibooru) search(
 			ctx,
 			delay,
 		); err != nil {
-			return nil, err
+			return tagSearchResponse{}, err
 		}
 	}
 
-	return nil, fmt.Errorf(
+	return tagSearchResponse{}, fmt.Errorf(
 		"Derpibooru request attempts exhausted",
 	)
 }

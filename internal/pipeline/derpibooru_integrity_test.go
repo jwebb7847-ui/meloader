@@ -34,7 +34,7 @@ func (tr derpibooruFixtureTransport) RoundTrip(r *http.Request) (*http.Response,
 	if r.URL.Host != "derpibooru.org" {
 		return tr.fallback.RoundTrip(r)
 	}
-	if r.URL.Path != "/api/v1/json/search/tags" {
+	if r.URL.Path != "/api/v1/json/search/tags" && !strings.HasPrefix(r.URL.Path, "/api/v1/json/tags/") {
 		return nil, fmt.Errorf("unexpected taxonomy request: %s", r.URL)
 	}
 	target := r.Clone(r.Context())
@@ -82,7 +82,7 @@ func TestDerpibooruSourceIntegrityAtUploadBoundary(t *testing.T) {
 		lookups.Add(1)
 		switch q := r.URL.Query().Get("q"); q {
 		case "id:10":
-			fmt.Fprint(w, `{"tags":[{"id":10,"name":"sky","category":null}]}`)
+			fmt.Fprint(w, `{"tags":[{"id":10,"name":"sky","category":null,"aliased_tag":null,"aliases":[]}]}`)
 		case "id:11":
 			fmt.Fprint(w, `{"tags":[{"id":11,"name":"cloud"}]}`)
 		case "id:12":

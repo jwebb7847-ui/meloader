@@ -17,6 +17,8 @@ type InterpretedTag struct {
 	Listed   string
 	Category string
 	Name     string
+	// Aliases are source-confirmed spellings for blacklist matching.
+	Aliases []string
 	// LegacyBlacklistName preserves existing matches after a filing rename.
 	LegacyBlacklistName string
 }

@@ -14,8 +14,8 @@ import (
 )
 
 func TestDerpibooruRejectsUnverifiedTaxonomy(t *testing.T) {
-	const valid = `{"id":10,"name":"sky","category":null}`
-	const wrongID = `{"id":99,"name":"sky","category":"character"}`
+	const valid = `{"id":10,"name":"sky","category":null,"aliased_tag":null,"aliases":[]}`
+	const wrongID = `{"id":99,"name":"sky","category":"character","aliased_tag":null,"aliases":[]}`
 	for _, tc := range []struct {
 		name     string
 		tags     any
@@ -34,6 +34,7 @@ func TestDerpibooruRejectsUnverifiedTaxonomy(t *testing.T) {
 		{name: "missing category", tags: []string{"sky"}, exact: `{"id":10,"name":"sky"}`, want: "missing or empty category", requests: 1},
 		{name: "unknown category", tags: []string{"sky"}, exact: `{"id":10,"name":"sky","category":"new"}`, want: "unknown category", requests: 1},
 		{name: "invalid category type", tags: []string{"sky"}, exact: `{"id":10,"name":"sky","category":true}`, want: "decoding Derpibooru response", requests: 1},
+		{name: "missing alias evidence", tags: []string{"sky"}, exact: `{"id":10,"name":"sky","category":null,"aliases":[]}`, want: "no verified alias fields", requests: 1},
 		{name: "wrong ID for same name", tags: []string{"sky"}, ids: []int{10}, batch: wrongID, exact: valid, want: "expected id 10, got 99", requests: 1},
 		{name: "wrong name for same ID", tags: []string{"sky"}, ids: []int{10}, batch: `{"id":10,"name":"other sky","category":null}`, exact: valid, want: `expected name "sky"`, requests: 1},
 		{name: "wrong ID after incomplete batch", tags: []string{"sky"}, ids: []int{10}, exact: wrongID, want: "expected id 10, got 99", requests: 2},
@@ -83,7 +84,7 @@ func TestDerpibooruRevalidatesLegacyCacheAndPersistsNullCategory(t *testing.T) {
 		calls.Add(1)
 		switch q := r.URL.Query().Get("q"); q {
 		case "id:10":
-			fmt.Fprint(w, `{"tags":[{"id":10,"name":"sky","category":null}]}`)
+			fmt.Fprint(w, `{"tags":[{"id":10,"name":"sky","category":null,"aliased_tag":null,"aliases":[]}]}`)
 		case "id:11":
 			fmt.Fprint(w, `{"tags":[{"id":10,"name":"sky","category":"character"}]}`)
 		default:
@@ -93,7 +94,7 @@ func TestDerpibooruRevalidatesLegacyCacheAndPersistsNullCategory(t *testing.T) {
 	}))
 	defer server.Close()
 	cache := filepath.Join(t.TempDir(), "derpibooru.json")
-	const legacy = `{"sky":{"id":10,"name":"sky"},"pony":{"id":20,"name":"pony","category":"species"}}`
+	const legacy = `{"sky":{"id":10,"name":"sky","category":null},"pony":{"id":20,"name":"pony","category":"species","aliased_tag":null,"aliases":[]}}`
 	if err := os.WriteFile(cache, []byte(legacy), 0o600); err != nil {
 		t.Fatal(err)
 	}

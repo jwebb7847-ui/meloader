@@ -58,7 +58,7 @@ func (m *Mapper) Trace(meta map[string]any) PostTrace {
 		}
 		t.Rows = append(t.Rows, r)
 	}
-	m.eachTag(category, profile, meta, func(field, listed, s, legacy string) {
+	m.eachTag(category, profile, meta, func(field, listed, s, legacy string, aliases []string) {
 		source := normalizeFiledTag(s)
 		after := applyFiledTagRule(profile.TagRules, source, legacy)
 		mapped := splitPostTag(source)
@@ -72,9 +72,9 @@ func (m *Mapper) Trace(meta map[string]any) PostTrace {
 		if r.Unchecked != "" && r.Unchecked != mapped.category {
 			t.Warnings = append(t.Warnings, fmt.Sprintf("tag rule %s -> %s: %s is unchecked in Rules, so this tag never reaches monbooru", source, after, r.Unchecked))
 		}
-		row(r, postBlacklistReads(profile, s, legacy, false))
-	}, func(field, listed, s, legacy string) {
-		row(TraceRow{Field: field, Listed: listed, MapDropped: true}, postBlacklistReads(profile, s, legacy, true))
+		row(r, postBlacklistReads(profile, s, legacy, aliases, false))
+	}, func(field, listed, s, legacy string, aliases []string) {
+		row(TraceRow{Field: field, Listed: listed, MapDropped: true}, postBlacklistReads(profile, s, legacy, aliases, true))
 	})
 
 	t.Rating = m.postRating(category, profile, meta)
