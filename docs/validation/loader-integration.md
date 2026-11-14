@@ -24,3 +24,17 @@ Use the paired audit configuration in the [local runbook](local-audit.md). Launc
 1. **Browser — Mebooru.** Open **Loader**, select `Audit_A`, and check that Queue says **To Audit_A**. Open **Watches**, **PTR**, and **Settings → Meloader**. Verify that the panels load and the existing strict blacklist setting is enabled. If Meloader uses password login, sign in on its own origin.
 2. **Browser — Mebooru.** Use one safe-rated search on a supported strict-mode booru, preferably a search with enough previously unfetched posts to give a timing sample. Select **up to 200**, confirm the destination, and submit it from Loader. Record time to first visible import, time to completion, and counts for created, archive skips, blacklisted and failed. Use the job's explicit gallery to verify its files and result links.
 3. **Browser — Mebooru.** Switch galleries while the job runs and confirm the queued destination stays fixed. Verify the expected unavailable state with Meloader stopped after completion. Use existing watch rows or a bounded manual check for Watches. Keep scheduled audit watches inactive.
+
+## Live Mac bulk result
+
+On 2026-11-14, the operator ran one strict Derpibooru search through Loader with Mebooru PR #1 at `74a1794`, Meloader PR #12 at `ed0bb36`, and gallery-dl 1.32.19. The operator reported using a VPN. Job 31 succeeded with 195 created and five skipped out of 200 posts. The gallery switch left the job in `Audit_A`. Opening an imported item from `Audit_B` switched to `Audit_A`, and the image rendered with source and tag metadata.
+
+| Stage | Measured result |
+| --- | --- |
+| Resolve | 6.888 seconds. The extractor resolved 201 records to detect more results and capped the job at 200. |
+| Strict taxonomy verification | 261.652 seconds summed over 200 successful enrichments. There were 210 taxonomy HTTP attempts, with 182 HTTP 200s and 28 HTTP 429s. Logged HTTP attempts took 28.485 seconds in total. The rest of the enrichment time was predominantly retry waits. |
+| Media phase | About 4 minutes 12 seconds between the last preflight taxonomy log and the first upload-side enrichment log. This interval includes gallery-dl setup, transfer pacing, and file transfers. The log has no separate timing for those steps. |
+| Import | About 10 seconds from the first upload-side enrichment log to completion. All 195 taxonomy enrichments in this phase used cached evidence without further taxonomy HTTP requests. |
+| Whole job | 8 minutes 51.258 seconds in the server log. The operator estimated 8 minutes 45 seconds and first noticed a downloaded row around minute five. |
+
+The first download is gated on strict verification of the window. The timing identifies cold taxonomy request volume as the first optimization target. Evaluate batching distinct tag IDs across posts within the existing request limit while preserving post-level verification and retry behavior. The VPN speed test measured a different server and cannot isolate the Derpibooru media route or rate limits.
