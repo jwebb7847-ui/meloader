@@ -1,6 +1,6 @@
 # Mebooru and Meloader project handoff
 
-Status reviewed 2026-11-13.
+Status reviewed 2026-11-14.
 
 ## Start here
 
@@ -10,12 +10,12 @@ Status reviewed 2026-11-13.
 | [Local audit runbook](../validation/local-audit.md) | Mac and VS Code setup, exact launch commands, smoke test, and troubleshooting |
 | [Source semantics contract](../architecture/source-semantics-proposal.md#product-decisions) | Approved rating, taxonomy, provenance, and filing behavior |
 | [Rating integrity](../validation/rating-integrity.md) and [negative-path and throughput evidence](../validation/negative-path-throughput.md) | Tests, reproducible cases, bounded live results, and benchmark limits |
-| [e621 validation](../validation/e621.md) | Generic mapper acceptance and the approved lore/contributor mappings |
+| [e621 validation](../validation/e621.md) and [blacklist timing](../validation/blacklist-timing.md) | Generic mapper acceptance, approved lore/contributor mappings, and strict blacklist acceptance |
 | [MEBOORU.md on mebooru-foundation](https://github.com/jwebb7847-ui/mebooru/blob/mebooru-foundation/MEBOORU.md) | Library direction, branch baseline, and upstream compatibility |
 
 ## Repository state
 
-- [Meloader](https://github.com/jwebb7847-ui/meloader) develops from `main`. [PR #5](https://github.com/jwebb7847-ui/meloader/pull/5) merged Item 3 at `3aa5aca`. Live e621 and Danbooru acceptance are complete. [PR #6](https://github.com/jwebb7847-ui/meloader/pull/6) merged the first Item 4 fixes at `18edb38`. The latest Mac audit used the identical code at `0b7ff78`.
+- [Meloader](https://github.com/jwebb7847-ui/meloader) develops from `main`. [PR #5](https://github.com/jwebb7847-ui/meloader/pull/5) merged Item 3 at `3aa5aca`. Live e621 and Danbooru acceptance are complete. [PR #6](https://github.com/jwebb7847-ui/meloader/pull/6) merged the first Item 4 fixes at `18edb38`. [PR #7](https://github.com/jwebb7847-ui/meloader/pull/7) adds strict blacklist verification. The live Mac check used candidate `025a3e5` before the review fixes.
 - [Mebooru](https://github.com/jwebb7847-ui/mebooru) has its gallery-switching and branding work on `mebooru-foundation` (last code checkpoint `fbb5232`). Its `main` remains at the upstream-derived v1.24.0 baseline (`0ac84b9`). Fetch the correct fork and inspect the current branch head before making changes in either repo.
 - The runbook describes the last observed MacBook Air audit setup. Check the local commit, listeners, and explicit config paths before relying on a running instance. GitHub changes do not restart local apps.
 
@@ -35,4 +35,4 @@ Source taxonomy answers what a source says a tag means. Cross-source synonyms an
 
 ## Resume here
 
-Resume [Item 4](../../ROADMAP.md#4-further-booru-coverage--next) with the remaining Derpibooru decisions on aliases, unusual namespaces, named original characters, and category-qualified blacklist timing. The trust and fallback fixes are merged. The [architecture defaults](../architecture/source-semantics-proposal.md#product-decisions) are approved. The [blacklist timing review](../validation/blacklist-timing.md) records the pre-download requirement and the remaining policy choice. Item 3 is complete, including [live Danbooru acceptance](../validation/negative-path-throughput.md#8-live-danbooru-acceptance). Larger end-to-end benchmarks remain deferred. Acquisition-tab design follows under Item 5.
+Resume [Item 4](../../ROADMAP.md#4-further-booru-coverage--next) with the Derpibooru filing decisions on aliases, unusual namespaces, and named original characters. The trust and fallback fixes are merged. The [opt-in pre-download blacklist](../validation/blacklist-timing.md) passed the Mac audit. The [architecture defaults](../architecture/source-semantics-proposal.md#product-decisions) are approved. Item 3 is complete, including [live Danbooru acceptance](../validation/negative-path-throughput.md#8-live-danbooru-acceptance). Larger end-to-end benchmarks remain deferred. Acquisition-tab design follows under Item 5.

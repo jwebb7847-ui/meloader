@@ -2,7 +2,7 @@
 {{with .Failure}}<div class="flash flash-{{.Kind}}">{{.Msg}}{{with .Detail}}: {{.}}{{end}}</div>{{end}}
 {{$resolved := .Resolved}}{{$gallery := .Gallery}}{{$unpaired := .Unpaired}}{{$galleryErr := .GalleryErr}}
 {{with .Trace}}{{$skipped := .Skipped}}{{$refused := .Refused}}
-{{if $skipped}}<div class="flash flash-warn">Skipped by {{$skipped}}. Nothing is downloaded.</div>{{else if $refused}}<div class="flash flash-err">Sending fails: {{$refused}}</div>{{else}}<div class="flash flash-ok">Would download and send {{len .Tags}} tag{{if ne (len .Tags) 1}}s{{end}}{{if $unpaired}}. monbooru not paired, the trace stops at the push{{else if $galleryErr}}. The gallery column is blank: {{$galleryErr}}{{end}}</div>{{end}}
+{{if $skipped}}<div class="flash flash-warn">Skipped by {{$skipped}}. Nothing is downloaded.</div>{{else if $refused}}<div class="flash flash-err">Sending fails: {{$refused}}</div>{{else}}<div class="flash flash-ok">{{if $.Strict}}Metadata passed strict blacklist checks. Would send{{else}}Would download and send{{end}} {{len .Tags}} tag{{if ne (len .Tags) 1}}s{{end}}{{if $unpaired}}. monbooru not paired, the trace stops at the push{{else if $galleryErr}}. The gallery column is blank: {{$galleryErr}}{{end}}</div>{{end}}
 <p class="field-hint">{{.Site}}{{with .PostURL}}, first post of this URL: <a href="{{.}}" target="_blank" rel="noopener">{{.}}</a>{{end}}</p>
 {{range .Warnings}}<span class="hint-warn">{{.}}</span>{{end}}
 {{if or .Rows .Rating}}

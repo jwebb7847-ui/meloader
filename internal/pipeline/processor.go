@@ -263,7 +263,14 @@ func (p *Processor) processDownload(ctx context.Context, job, snap *queue.Job) e
 		probe = strconv.Itoa(snap.Offset+1) + "-" + strconv.Itoa(snap.Offset+limit+1)
 	}
 	resolveStarted := time.Now()
-	res, err := p.runner.Resolve(ctx, snap.URL, probe, false)
+	strict := p.cfg.Current().Tags.StrictBlacklist
+	var res gdl.ResolveResult
+	var err error
+	if strict {
+		res, err = p.runner.ResolveStrict(ctx, snap.URL, probe)
+	} else {
+		res, err = p.runner.Resolve(ctx, snap.URL, probe, false)
+	}
 
 	logx.Infof(
 		"perf: job=%d stage=resolve duration=%s items=%d err=%v",
@@ -278,6 +285,9 @@ func (p *Processor) processDownload(ctx context.Context, job, snap *queue.Job) e
 	}
 	if ctx.Err() != nil {
 		return ctx.Err()
+	}
+	if strict && len(res.Queue) != 0 {
+		return abortJob(ctx, job, strictBlacklistError("the source handed off to another extractor"))
 	}
 	if len(res.Items) == 0 {
 		// A dispatcher's -j pass lists its Message.Queue handoffs without
@@ -297,6 +307,9 @@ func (p *Processor) processDownload(ctx context.Context, job, snap *queue.Job) e
 	site := resolved[0].Category
 	job.SetSubcategory(resolved[0].Subcategory)
 	cbz := p.mapper.KindOf(site) == mapping.KindManga
+	if strict && (cbz || !gdl.StrictSource(site, resolved[0].Subcategory)) {
+		return abortJob(ctx, job, strictBlacklistError("pre-download verification is unavailable for this source or link type"))
+	}
 	if cbz && snap.Watch != 0 {
 		job.SetSite(site)
 		return abortJob(ctx, job, errWatchManga)
@@ -337,6 +350,9 @@ func (p *Processor) processDownload(ctx context.Context, job, snap *queue.Job) e
 		logx.Infof("queue: job %d capped to the first %d items (--range %s); re-submit with a higher range to fetch more", snap.ID, limit, rng)
 	}
 
+	if strict {
+		return p.fetchStrict(ctx, job, snap, resolved, site, rng, listErr)
+	}
 	return p.fetch(ctx, job, snap, resolved, site, cbz, false, rng, listErr)
 }
 
