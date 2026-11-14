@@ -51,7 +51,7 @@ Recover authoritative categories when gallery-dl emits flattened tags. Use the s
 
 ### 4. Further booru coverage — next
 
-[PR #6](https://github.com/jwebb7847-ui/meloader/pull/6) shipped the approved trust and fallback fixes for malformed taxonomy, tag ID verification, and canonical post provenance. The Mac audit confirmed a live import and cache reuse after restart. The [opt-in pre-download blacklist](docs/validation/blacklist-timing.md) in [PR #7](https://github.com/jwebb7847-ui/meloader/pull/7) passed loopback media-request checks and a live Mac audit in `Audit_A`. [PR #8](https://github.com/jwebb7847-ui/meloader/pull/8) passed the [debug-to-Trace URL prefill Mac check](docs/validation/blacklist-timing.md#debug-to-trace-prefill) and awaits merge.
+[PR #6](https://github.com/jwebb7847-ui/meloader/pull/6) shipped the approved trust and fallback fixes for malformed taxonomy, tag ID verification, and canonical post provenance. The Mac audit confirmed a live import and cache reuse after restart. The [opt-in pre-download blacklist](docs/validation/blacklist-timing.md) in [PR #7](https://github.com/jwebb7847-ui/meloader/pull/7) passed loopback media-request checks and a live Mac audit in `Audit_A`. [PR #8](https://github.com/jwebb7847-ui/meloader/pull/8) merged the [Mac-tested debug-to-Trace URL prefill](docs/validation/blacklist-timing.md#debug-to-trace-prefill) at `b0a0213`.
 
 Remaining filing decisions cover verified aliases, unusual namespaces, and named original characters. Use targeted fixtures or metadata-only probes, and check request counts and cache behavior for regressions.
 
