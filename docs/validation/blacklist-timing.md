@@ -6,11 +6,11 @@ The operator wants a user-selected content blocklist that stops matching media b
 
 ## Approved policy
 
-**Settings → Rules → Require blacklist verification before downloading** is off by default. It uses the existing global and per-site rules. The initial scope is ordinary Derpibooru, Danbooru, and e621 posts and searches with gallery-dl `1.32.19`. Direct links, pools, extractor handoffs, and replacement downloads are withheld while this mode is active. Mebooru's library gains no outbound calls.
+**Settings → Rules → Require blacklist verification before downloading** is off by default. It uses the existing global and per-site rules. The initial scope is ordinary Derpibooru, Danbooru, and e621 posts and searches with gallery-dl `1.32.19`. Direct links, pools, extractor handoffs, replacement downloads, and debug reruns are withheld while this mode is active. Use Trace to inspect source tags. Mebooru's library gains no outbound calls.
 
-Meloader obtains the source metadata first. A positive match in raw tags can stop a post immediately. Otherwise Meloader verifies the native tag list and rating and, for Derpibooru, obtains authoritative taxonomy. A known blacklist match is a skip. Missing, malformed, or unavailable evidence needed to clear a post produces a visible failure. Meloader binds approval to the verified source, post ID, media URL, tags, and rating. gallery-dl rechecks them before requesting the media, and Meloader checks the download result before upload. Trace reports whether the metadata passed, matched a rule, or could not be verified.
+Meloader obtains the source metadata first. A positive match in raw tags can stop a post immediately. Otherwise Meloader verifies the native tag list and rating and, for Derpibooru, obtains authoritative taxonomy. A known blacklist match is a skip. Missing, malformed, or unavailable evidence needed to clear a post produces a visible failure. Meloader binds approval to the verified source, post ID, media URL, tags, and rating. gallery-dl rechecks them before requesting the media, and Meloader checks the download result before upload. Strict acquisition ignores gallery-dl custom keyword and metadata-field overrides that could replace source evidence. Trace reports whether the metadata passed, matched a rule, or could not be verified.
 
-This uses source-supplied metadata. A valid-looking post with an omitted or inaccurate violence tag can still pass. Rules can cover known tag variants and combine tags using the existing syntax. Inspecting the image locally would require receiving its bytes first. Image classification is outside this scope.
+This uses source-supplied metadata. A valid-looking post with an omitted or inaccurate violence tag can still pass. Rules match normalized spelling or an explicit `*` wildcard. Add `violence` and `violense` on separate lines to cover both spellings. Inspecting the image locally would require receiving its bytes first. Image classification is outside this scope.
 
 ## Baseline evidence
 
@@ -33,6 +33,10 @@ The Go probe exercised the existing acquisition pipeline with a fake downloader 
 
 The opt-in test uses gallery-dl `1.32.19` with synthetic post metadata and a loopback media server. It counts actual media requests and writes only to a mock `Audit_A` gallery. The three nonviolent explicit controls transfer. The category-qualified matches, a taxonomy failure, a new post that shifted into the search, changed tags, a changed media URL, and unsupported direct links make zero media requests. Archive replay adds no media request. A separate test confirms Meloader's preflight catches a malformed gallery-dl predicate before the download pass.
 
-Run the opt-in checks with `MELOADER_STRICT_TEST_GDL` set to the pinned gallery-dl virtualenv executable and run `go test ./internal/gdl ./internal/pipeline -run TestStrict -v`. Live Mac validation is pending.
+Run the opt-in checks with `MELOADER_STRICT_TEST_GDL` set to the pinned gallery-dl virtualenv executable and run `go test ./internal/gdl ./internal/pipeline -run TestStrict -v`. The review added regressions for custom gallery-dl keyword overrides and for the debug rerun path.
+
+## Live Mac acceptance
+
+The operator tested [PR #7](https://github.com/jwebb7847-ui/meloader/pull/7) at `025a3e5` with gallery-dl `1.32.19` and the existing paired `Audit_A` setup. On safe-rated Derpibooru post `3796956`, Trace reported **Blocked before download** with the temporary global rule `character:twilight_sparkle`. The queue showed **1 blacklisted** and named the same rule. After removing the temporary rule, the same post returned **1 created** and **19 tags sent**. These screenshots establish the live outcomes. The automated loopback test independently counts media requests.
 
 [Current matcher](../../internal/mapping/blacklist.go) · [Acquisition pipeline](../../internal/pipeline/processor.go) · [gallery-dl file dispatch and predicates](https://github.com/mikf/gallery-dl/blob/v1.32.19/gallery_dl/job.py#L252)

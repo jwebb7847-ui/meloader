@@ -21,6 +21,11 @@ func (s *Server) itemDebug(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data["URL"] = url
+	if s.cfg.Current().Tags.StrictBlacklist {
+		data["StrictBlacklist"] = true
+		s.render(w, "item_debug", data)
+		return
+	}
 	if r.Method == http.MethodGet {
 		s.render(w, "item_debug", data)
 		return

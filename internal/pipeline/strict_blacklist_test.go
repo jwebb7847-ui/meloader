@@ -165,6 +165,12 @@ main()
 	cfg.GalleryDL.BinaryPath = bin
 	cfg.GalleryDL.ConfigPath = filepath.Join(dir, "gallery-dl.json")
 	cfg.GalleryDL.ArchivePath = filepath.Join(dir, "archive.sqlite")
+	// User-supplied gallery-dl keywords must not hide native content tags
+	// or overwrite the URL used by the strict download predicate.
+	cfg.GalleryDL.RawConfig = `{
+		"keywords-global":{"meloader_verified_media_url":"https://example.invalid/override.jpg"},
+		"extractor":{"danbooru":{"keywords":{"tags":["portrait"],"tags_general":["portrait"]}}}
+	}`
 	provider := config.NewProvider(cfg)
 	mapper, err := mapping.New(provider, "")
 	if err != nil {

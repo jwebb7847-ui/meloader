@@ -5,7 +5,22 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/monbooru/monloader/internal/config"
 )
+
+func TestStrictBlacklistRefusesDebugDownload(t *testing.T) {
+	cfg := config.Default()
+	cfg.Tags.StrictBlacklist = true
+	runner := New(config.NewProvider(cfg), SiteLists{})
+	work := filepath.Join(t.TempDir(), "debug-work")
+	if _, _, err := runner.DebugLog(context.Background(), "https://derpibooru.org/images/42", work); err == nil {
+		t.Fatal("strict blacklist allowed the debug download")
+	}
+	if _, err := os.Stat(work); !os.IsNotExist(err) {
+		t.Fatalf("debug work directory was touched: %v", err)
+	}
+}
 
 func TestStrictGalleryDLPreflight(t *testing.T) {
 	bin := os.Getenv("MELOADER_STRICT_TEST_GDL")

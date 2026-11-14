@@ -12,6 +12,8 @@ Last verified by the operator on the Apple Silicon MacBook Air on 2026-11-13. Th
 
 The repository Go modules declare Go 1.27.3. The latest Meloader Mac audit used Go 1.27.4. The older upgrade-audit checkout is `$HOME/Documents/VSC/meloader-rating-qa` at `3aa5aca`. The older Meloader state is in `$HOME/Library/Application Support/Monloader Audit`. Reuse the existing **Main Upgrade** copy for this audit. The two sites' upstream internal command names are still `monbooru` and `monloader`.
 
+The [strict blacklist audit](blacklist-timing.md#live-mac-acceptance) used a separate Meloader checkout at `$HOME/Documents/VSC/meloader-blacklist-qa`, detached at `025a3e5`, with the same **Main Upgrade** state and gallery-dl binary. The launch block below reproduces the earlier upgrade smoke test. For blacklist validation, run it from a clean checkout at the revision under test.
+
 The configured Mebooru galleries include `Audit_A`, `Audit_B`, and `home`. All queue tests here target `Audit_A`. The Mebooru config is authoritative for its media and database paths. The copied audit setup isolates Meloader state and still targets the dedicated Mebooru audit gallery.
 
 ## Inspect before launch

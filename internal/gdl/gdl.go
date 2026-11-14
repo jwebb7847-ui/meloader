@@ -337,7 +337,7 @@ func (t *Tool) resolveWithOptions(ctx context.Context, url, rng string, deep, st
 	}
 	args = append(args, mode)
 	if strict {
-		args = append(args, "--child-filter", "False", "-o", "follow=false")
+		args = append(args, strictSourceArgs()...)
 		if rng != "" {
 			args = append(args, "--post-range", rng)
 		}

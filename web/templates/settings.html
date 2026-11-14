@@ -186,7 +186,7 @@
     {{template "webui/settings_section_header" dict "Title" "Rules" "Hint" "What happens to a post's tags, in order."}}
     {{if eq .FlashSection "rules"}}<div class="flash flash-{{.FlashKind}}">{{.Flash}}</div>{{end}}
     {{template "tag_flow" dict "Site" false "MonbooruURL" .MonbooruURL}}
-    <p class="field-hint">Refresh, lookup, upgrade and contribution jobs skip step 2.</p>
+    <p class="field-hint">Metadata refresh, lookup and contribution jobs skip step 2. File replacement and debug reruns are unavailable while strict verification is on.</p>
     <form method="POST" action="/settings/rules">
       <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
       <div class="field field-separated flow-part-2">

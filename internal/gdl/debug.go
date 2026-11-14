@@ -19,6 +19,9 @@ const maxDebugLog = 256 << 10
 // file. noExtractor means gallery-dl matched no extractor, so monloader
 // fetched that file itself and the log's refusal is not what happened.
 func (t *Tool) DebugLog(ctx context.Context, url, workRoot string) (log string, noExtractor bool, err error) {
+	if t.cfg.Current().Tags.StrictBlacklist {
+		return "", false, strictTransferError("debug reruns can fetch media. Use Settings → Trace a post while strict verification is on")
+	}
 	if err := os.MkdirAll(workRoot, 0o755); err != nil {
 		return "", false, &outcome.CodedError{Code: outcome.ErrCodeDownloadFailed, Msg: err.Error()}
 	}

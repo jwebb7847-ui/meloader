@@ -98,9 +98,17 @@ func strictGateExpression(path string) string {
 		")(locals(), std.json, " + strconv.QuoteToASCII(path) + ")"
 }
 
+func strictSourceArgs() []string {
+	// gallery-dl applies custom keywords and generated metadata after
+	// extraction. Keep those options from replacing the source evidence.
+	return []string{"--child-filter", "False", "-o", "follow=false",
+		"-o", "keywords={}", "-o", "keywords-global={}",
+		"-o", "metadata-url=" + strictMediaURLKey, "-o", "metadata-path=false",
+		"-o", "metadata-http=false", "-o", "metadata-version=false", "-o", "metadata-extractor=false"}
+}
+
 func strictDownloadArgs(workDir, rng, url string, archive Archive, gate string) []string {
-	args := []string{"-D", workDir, "--filter", gate, "--child-filter", "False",
-		"-o", "follow=false", "-o", "metadata-url=" + strictMediaURLKey, "-o", "fallback=false"}
+	args := append(strictSourceArgs(), "-D", workDir, "--filter", gate, "-o", "fallback=false")
 	if rng != "" {
 		// File ranges are evaluated after the file predicate. Count source
 		// posts before the predicate so a fully rejected window stays bounded.
