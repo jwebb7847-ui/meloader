@@ -243,6 +243,25 @@ func formatTag(category, name string) string {
 	return category + ":" + name
 }
 
+// A literal general name with a category-looking prefix needs an explicit
+// general: on the wire so the library parses its name only once.
+func filedTag(category, name string) string {
+	if prefix, _, found := strings.Cut(name, ":"); category == "general" && found {
+		prefix = strings.ToLower(prefix)
+		if prefix == "rating" || isTagCategory(prefix) {
+			return "general:" + name
+		}
+	}
+	return formatTag(category, name)
+}
+
+func normalizeFiledTag(tag string) string {
+	if name, general := strings.CutPrefix(tag, "general:"); general {
+		return filedTag("general", normalizeName(name))
+	}
+	return normalizeTag(tag)
+}
+
 func NormalizeTag(tag string) string { return normalizeTag(tag) }
 
 // NormalizeRuleTarget keeps a general: prefix, which normalizeTag folds away:
@@ -275,6 +294,10 @@ func DroppedRuleTarget(drop []string, from, to string) string {
 // The full form is tried before the bare name, and a general tag
 // containing a colon matches by its full form.
 func applyTagRule(rules map[string]string, tag string) string {
+	return applyFiledTagRule(rules, tag, "")
+}
+
+func applyFiledTagRule(rules map[string]string, tag, legacy string) string {
 	if len(rules) == 0 {
 		return tag
 	}
@@ -286,6 +309,14 @@ func applyTagRule(rules map[string]string, tag string) string {
 	if !ok && prefix != "" {
 		repl, ok = rules[name]
 	}
+	if !ok && legacy != "" {
+		legacy = normalizeFiledTag(legacy)
+		repl, ok = rules[legacy]
+		if !ok && prefix != "" {
+			_, name, _ := strings.Cut(legacy, ":")
+			repl, ok = rules[name]
+		}
+	}
 	if !ok {
 		return tag
 	}
@@ -293,7 +324,7 @@ func applyTagRule(rules map[string]string, tag string) string {
 		return ""
 	}
 	if cat, rest, found := strings.Cut(repl, ":"); found && isTagCategory(cat) && rest != "" {
-		return normalizeTag(repl)
+		return normalizeFiledTag(repl)
 	}
 	if prefix != "" {
 		return prefix + ":" + repl

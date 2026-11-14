@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/monbooru/monloader/internal/kwdict"
 	"github.com/monbooru/monloader/internal/shared/fsx"
 	"github.com/monbooru/monloader/internal/shared/logx"
 )
@@ -242,6 +243,9 @@ func (d *Derpibooru) Enrich(ctx context.Context, meta map[string]any) error {
 	if normalizeAdapterSource(stringValue(meta["category"])) != d.Source() {
 		return nil
 	}
+	if _, verified := meta[kwdict.InterpretedTagsKey].([]kwdict.InterpretedTag); verified {
+		return nil
+	}
 	sourceTags, records, err := d.resolvePostTags(ctx, meta)
 	if err != nil {
 		return err
@@ -254,9 +258,9 @@ func (d *Derpibooru) Enrich(ctx context.Context, meta map[string]any) error {
 	}
 
 	/*
-		Philomena supplies one flat tag list. Keep that shape because
-		Monloader's mapper already understands namespace-prefixed entries
-		inside a flat list.
+		Keep the enriched flat view for rating and metadata consumers. The
+		mapper reads the verified category, name and original spelling from
+		the typed view so it does not infer categories from literal colons.
 
 		Examples:
 		  wings                     -> general:wings
@@ -268,6 +272,7 @@ func (d *Derpibooru) Enrich(ctx context.Context, meta map[string]any) error {
 		path continues to lift them into Monbooru's rating category.
 	*/
 	rewritten := make([]string, 0, len(sourceTags))
+	interpreted := make([]kwdict.InterpretedTag, 0, len(sourceTags))
 
 	for i, sourceName := range sourceTags {
 		rec := records[i]
@@ -276,6 +281,16 @@ func (d *Derpibooru) Enrich(ctx context.Context, meta map[string]any) error {
 			rec,
 			sourceName,
 		)
+		if !isRating {
+			tag := kwdict.InterpretedTag{Listed: sourceName, Category: target, Name: name}
+			if strings.EqualFold(strings.TrimSpace(rec.Namespace), "oc") {
+				tag.LegacyBlacklistName = strings.TrimSpace(rec.NameInNamespace)
+				if tag.LegacyBlacklistName == "" {
+					tag.LegacyBlacklistName = afterNamespace(sourceName)
+				}
+			}
+			interpreted = append(interpreted, tag)
+		}
 
 		switch {
 		case isRating:
@@ -299,6 +314,7 @@ func (d *Derpibooru) Enrich(ctx context.Context, meta map[string]any) error {
 	}
 
 	meta["tags"] = rewritten
+	meta[kwdict.InterpretedTagsKey] = interpreted
 
 	return nil
 }
@@ -324,10 +340,7 @@ func derpibooruTarget(
 		return "artist", nameInNamespace, false
 
 	case "oc":
-		if nameInNamespace == "" {
-			nameInNamespace = afterNamespace(sourceName)
-		}
-		return "character", nameInNamespace, false
+		return "character", sourceName, false
 	}
 
 	switch rec.Category.value {
