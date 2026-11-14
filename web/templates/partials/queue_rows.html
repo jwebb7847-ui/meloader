@@ -20,7 +20,7 @@
     {{if .Summary.Enriched}}<span class="o-enriched">{{.Summary.Enriched}} enriched</span>{{end}}
     {{if .Summary.Matched}}<span class="o-matched">{{.Summary.Matched}} matched</span>{{end}}
     {{if .Summary.Replaced}}<span class="o-replaced">{{.Summary.Replaced}} replaced</span>{{end}}
-    {{$archive := .Summary.Archived}}{{with sub .Summary.Skipped .Summary.Blacklisted}}<span class="o-skipped_archive"{{if gt $archive 0}} title="Already fetched by an earlier run, which may not have reached monbooru. Force download fetches them again."{{end}}>{{.}} skipped</span>{{end}}
+    {{$archive := .Summary.Archived}}{{with sub .Summary.Skipped .Summary.Blacklisted}}<span class="o-skipped_archive"{{if gt $archive 0}} title="{{$archive}} skipped by the download archive. The gallery may no longer have those images. Use Force download to fetch them again."{{end}}>{{.}} skipped</span>{{end}}
     {{if .Summary.Blacklisted}}<span class="o-skipped_blacklist">{{.Summary.Blacklisted}} blacklisted</span>{{end}}
     {{if .Summary.Failed}}<span class="o-failed">{{.Summary.Failed}} failed</span>{{end}}
     {{if .Summary.Canceled}}<span class="o-canceled">{{.Summary.Canceled}} canceled</span>{{end}}
@@ -49,13 +49,16 @@
         {{/* Only archive skips: re-downloading a type monbooru cannot ingest changes nothing. */}}
         {{if gt .Summary.Archived 0}}
         <button data-peer-title="" hx-post="/queue/{{.Lead.ID}}/retry?force=1"
-                title="Download again, even though an earlier run already fetched it">Force download</button>
+                hx-confirm="Force download this search again?"
+                data-confirm-ok="Force download"
+                data-confirm-danger="This retries {{if gt (len .IDs) 1}}all {{len .IDs}} queued windows{{else}}this window{{end}} and bypasses the download archive. Current blacklist rules still apply."
+                title="Retry the queued windows without the download archive">Force download</button>
         {{end}}
         {{if and .Watchable (not .Watched)}}<button hx-post="/queue/{{.Lead.ID}}/watch" title="Check this search again on a schedule">Watch</button>{{end}}
         <button hx-delete="/queue/{{.Lead.ID}}"
                 hx-confirm="{{if gt (len .IDs) 1}}Remove this search and all {{len .IDs}} of its windows?{{else}}Remove this job?{{end}}"
                 data-confirm-ok="Remove"
-                data-confirm-danger="Its images stay in monbooru.{{if ne .Worst.Status "succeeded"}} If you add it again it may read as already fetched: use Force download.{{end}}">Remove</button>
+                data-confirm-danger="Its images stay in monbooru. A new submission may skip posts in the download archive.">Remove</button>
       {{end}}
     </span>
   </td>

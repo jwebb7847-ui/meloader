@@ -7,12 +7,14 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/monbooru/monloader/internal/gdl"
 	"github.com/monbooru/monloader/internal/kwdict"
 	"github.com/monbooru/monloader/internal/mapping"
 	"github.com/monbooru/monloader/internal/outcome"
 	"github.com/monbooru/monloader/internal/queue"
+	"github.com/monbooru/monloader/internal/shared/logx"
 	"github.com/monbooru/monloader/internal/taxonomy"
 )
 
@@ -124,6 +126,7 @@ func (p *Processor) fetchStrict(ctx context.Context, job, snap *queue.Job, resol
 	gallery := p.beginJob(job, snap, site)
 	job.SetItems(p.initialItems(resolved, false, snap.URL, snap.PageURL))
 
+	preflightStarted := time.Now()
 	rules, err := p.mapper.StrictBlacklist(site)
 	if err != nil {
 		return abortJob(ctx, job, strictBlacklistError(err.Error()))
@@ -133,6 +136,7 @@ func (p *Processor) fetchStrict(ctx context.Context, job, snap *queue.Job, resol
 	// Preflight outcomes must survive processItems, which treats a nil
 	// result as an archive skip on the normal acquisition path.
 	withheld := make(map[int]string)
+	blacklisted := 0
 	verdicts := p.strictWindowVerdicts(ctx, resolved, site, rules)
 	for i, item := range resolved {
 		if ctx.Err() != nil {
@@ -149,6 +153,7 @@ func (p *Processor) fetchStrict(ctx context.Context, job, snap *queue.Job, resol
 		case note != "":
 			skipItem(job, i, outcome.SkippedBlacklist, "before download: "+note)
 			withheld[i] = note
+			blacklisted++
 		default:
 			if _, exists := allowed[item.ID]; exists {
 				return abortJob(ctx, job, strictBlacklistError("duplicate post ID in the listing"))
@@ -157,6 +162,8 @@ func (p *Processor) fetchStrict(ctx context.Context, job, snap *queue.Job, resol
 			approved = append(approved, item)
 		}
 	}
+	logx.Infof("perf: job=%d stage=strict-preflight source=%s duration=%s posts=%d approved=%d blacklisted=%d refused=%d",
+		snap.ID, site, time.Since(preflightStarted).Round(time.Millisecond), len(resolved), len(approved), blacklisted, len(withheld)-blacklisted)
 	if len(approved) == 0 {
 		if listErr != nil {
 			p.markCutShort(job, snap, listErr, snap.Offset+len(resolved))
@@ -176,7 +183,7 @@ func (p *Processor) fetchStrict(ctx context.Context, job, snap *queue.Job, resol
 			job.UpdateItem(i, func(it *queue.Item) { it.Status = queue.ItemDownloaded })
 		}
 	}
-	downloaded, dlErr := p.runner.DownloadStrict(ctx, snap.URL, rng, workDir, mode, onFile, approved)
+	downloaded, dlErr := p.runner.DownloadStrict(gdl.WithStrictDownloadJob(ctx, snap.ID), snap.URL, rng, workDir, mode, onFile, approved)
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -205,7 +212,10 @@ func (p *Processor) fetchStrict(ctx context.Context, job, snap *queue.Job, resol
 			withheld[row] = ""
 		}
 	}
+	ingestStarted := time.Now()
 	p.processItems(ctx, job, entries, withheld, gallery, snap.URL, snap.PageURL, dlErr, reached)
+	logx.Infof("perf: job=%d stage=strict-ingest duration=%s transfer_rows=%d canceled=%t",
+		snap.ID, time.Since(ingestStarted).Round(time.Millisecond), len(downloaded), ctx.Err() != nil)
 	if cut := cmp.Or(listErr, dlErr); cut != nil && ctx.Err() == nil {
 		p.markCutShort(job, snap, cut, snap.Offset+len(resolved))
 	}
