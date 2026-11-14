@@ -27,7 +27,7 @@ Keep the network boundary intact: Meloader is the explicitly WAN-capable acquisi
 
 - **Meloader `main`** contains Items 1–4. [PR #5](https://github.com/jwebb7847-ui/meloader/pull/5) merged the stacked taxonomy and source-semantics work at `3aa5aca`. [PR #6](https://github.com/jwebb7847-ui/meloader/pull/6) merged the Derpibooru integrity fixes at `18edb38`. [PR #7](https://github.com/jwebb7847-ui/meloader/pull/7) merged strict blacklist verification at `5bcd092`. PRs #1–#4 record the earlier stacked reviews.
 - **Mebooru `mebooru-foundation`** contains the fork's library UI work. Its `main` remains the upstream-derived v1.24.0 baseline. See [MEBOORU.md](https://github.com/jwebb7847-ui/mebooru/blob/mebooru-foundation/MEBOORU.md) for the library's direction and baseline.
-- **Next milestone: Item 5.** Design the acquisition interface and how it connects Mebooru to the separate Meloader service.
+- **Current milestone: Item 5.** Loader integration and bounded live Derpibooru validation are in review. The separate service and pairing are in place on the candidate branches.
 
 ## Milestones
 
@@ -40,7 +40,7 @@ Recover authoritative categories when gallery-dl emits flattened tags. Use the s
 - A 20-post Derpibooru taxonomy workload took **22.99 s cold**, with 17 HTTP attempts including two rate-limit responses. Three warm reloads reproduced the same 442 mapped tag assignments, made **zero taxonomy HTTP attempts**, and took **1.38 ms median** for enrichment and mapping. This measures resolver and mapper work. [Cold/warm audit](docs/validation/negative-path-throughput.md#6-live-derpibooru-taxonomy-cache-audit)
 - The bounded Safebooru continuation created 20 images in about **35 s**. The prior window created 15 and skipped five. [Live acquisition results](docs/validation/negative-path-throughput.md#bounded-20-post-safebooru-run-and-continuation--passed)
 - After merging, a copied-state Derpibooru audit created five images, preserved ratings, categories and source links, restored queue history after restart, reused the taxonomy cache, and skipped all five on replay through the download archive. [Upgrade smoke test](docs/validation/negative-path-throughput.md#7-post-merge-derpibooru-upgrade-smoke-test)
-- Larger end-to-end tests at 200, 1,000 and 10,000 images remain deferred. Measure time to first import, throughput, added HTTP requests, peak memory/goroutines and failures before making bulk performance claims. Use the separate synthetic results only as local processing baselines.
+- Bounded 200-post Derpibooru end-to-end tests ran during Item 5. Tests at 1,000 and 10,000 images remain deferred. Measure time to first import, throughput, added HTTP requests, peak memory/goroutines and failures before making bulk performance claims. Use the separate synthetic results only as local processing baselines.
 
 ### 3. Generalized source adapters — complete
 
@@ -55,9 +55,9 @@ Recover authoritative categories when gallery-dl emits flattened tags. Use the s
 
 The filing policy for named original characters and unusual namespaces passed Mac Trace acceptance in [PR #10](https://github.com/jwebb7847-ui/meloader/pull/10). Verified Derpibooru aliases in [PR #11](https://github.com/jwebb7847-ui/meloader/pull/11) match blacklist rules in both directions and file under the canonical tag. The alias change passed automated media-request checks and live Mac Trace acceptance. [Filing and alias evidence](docs/validation/derpibooru-filing.md)
 
-### 5. Meloader / Mebooru user integration
+### 5. Meloader / Mebooru user integration — in review
 
-Provide a native Mebooru **Loader** tab with Meloader's existing Queue, Watches, and PTR controls. Put companion settings under **Settings → Meloader**. Keep the browser surfaces on the separate Meloader origin and retain the existing pairing and library privacy boundary. Use a single live Mac search capped at 200 posts for acceptance. [Integration and validation](docs/validation/loader-integration.md)
+The native Mebooru **Loader** tab exposes Meloader's Queue, Watches, and PTR controls, with companion settings under **Settings → Meloader**. The browser surfaces use the separate Meloader origin and retain the existing pairing and library privacy boundary. The bounded Mac audits covered a 200-post Derpibooru import, gallery switching and result links, strict verification timing, and explicit archive replay. The 20-post pacing comparison closed with the 1.0 s default retained. [Integration and validation](docs/validation/loader-integration.md)
 
 ### 6. Reliability and observability
 

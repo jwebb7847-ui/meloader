@@ -77,3 +77,16 @@ Job 32 made 22 taxonomy HTTP attempts, including two 429s, and warmed the cache 
 The operator deleted the replayed images before job 34. The ordinary resubmission had 195 archive skips, four blacklist skips and one new transfer. Job 35 had nine archive skips and one blacklist skip. The grouped 400-post row showed 190 created, one duplicate, 204 other skips and five blacklisted. A result opened successfully in `Audit_A`.
 
 The download archive records fetch history separately from the gallery. Deleting an image in Mebooru leaves that history intact. **Force download** explicitly retries all windows in the selected queue series, bypasses the download archive for the retry, and evaluates the current blacklist. To restore only the first window after continuing a search, submit it as a new job with **up to 200** and use **Force download** on that new row. The loopback regression verifies that this archive bypass fetches an allowed archived post and makes zero media requests for blocked or unverifiable posts.
+
+## Live Derpibooru pacing comparison
+
+The 20-post Mac comparison used the same ID-bounded search and destination, `Audit_A`, with strict blacklist verification enabled. Both ordinary submissions skipped all 20 through the archive. The two forced runs each fetched 20 files totaling 37,474,737 bytes, with source-request pacing held at 1.0 s.
+
+| Forced run | File delay | gallery-dl run | First completed file | Strict preflight | Total | Gallery result |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| 36 | 1.0 s | 26.767 s | 2.865 s | 1 ms | 28.940 s | 20 created |
+| 37 | 0.5 s | 23.543 s | 2.182 s | 1 ms | 25.280 s | 20 duplicates |
+
+The lower delay saved 3.224 s in the gallery-dl phase, about 12% in this pair. This phase includes source re-listing, pacing, and transfer. The live pair gives no breakdown of those costs and no estimate for a 200-file window. Both live runs approved all 20 posts. In the pinned gallery-dl loopback check, both delays requested the same 20 allowed files and made zero media requests for the blacklisted, unverified, and changed posts.
+
+Keep the 1.0 s default and close this pacing experiment. Revisit bulk throughput when a representative workload shows a specific bottleneck worth addressing.
