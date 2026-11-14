@@ -1,4 +1,4 @@
-# Item 3B — Source semantics contract (proposal)
+# Source semantics contract
 
 **Status (2026-11-13).** The approved Item 3 behavior shipped in [PR #5](https://github.com/jwebb7847-ui/meloader/pull/5) on `main`. The approved scope covers rating integrity, source authority with user-controlled filing, and visible refusal when required taxonomy is unavailable or invalid. The [e621 filing decision](../validation/e621.md#live-lore-and-contributor-traces--2026-11-13) retains the current mapper rules. [Live Danbooru acceptance](../validation/negative-path-throughput.md#8-live-danbooru-acceptance) verified native `s` → `rating:sensitive` and categorized tags in `Audit_A`. The architecture defaults below are approved. Individual source mappings and the scope of any future diagnostic retention remain open.
 
@@ -20,7 +20,7 @@ The proposed logical sequence is:
 4. **Apply user-controlled overrides, tag rules, and blacklist/drop preferences** at their established points in the current pipeline. Preserve the distinction between source facts and the user's chosen final organization.
 5. **Validate and export** the final source identity, normalized tags, rating, commentary, URLs, and other available metadata using the existing Mebooru contract.
 
-This is a **conceptual separation**, not a proposal to reorder existing production code indiscriminately. In today's pipeline, blacklist filtering already occurs before downloads where possible and again after enrichment; do not remove that two-pass behavior. Some decisions (such as flattened-category validation) already have a specific position and must be preserved until tests justify changes.
+These steps describe responsibility. Standard acquisition checks the blacklist before download where possible and again after enrichment. The opt-in strict path verifies the metadata it needs before transfer and retains the check before upload. [Blacklist timing and scope](../validation/blacklist-timing.md)
 
 ## Source claims: sparse, not heavyweight
 
@@ -64,9 +64,9 @@ Keep source/site identity, source-post ID, canonical post URL, parent references
 
 Mebooru currently records source membership and tag-origin provenance, but this does **not** mean it persists every upstream raw metadata value. Decide raw metadata archival separately if later audits need it. Do not silently overwrite source-evidence records with user-facing vocabulary decisions.
 
-## Ratings need a safety decision
+## Source rating policy
 
-Today, a malformed or unknown rating can map to the empty string; the code comments note that an unrated item is visible under every Mebooru rating ceiling. This is an existing policy behavior, **not** an endorsement of treating an invalid rating as safe.
+Mebooru shows genuinely unrated entries under every rating ceiling. Meloader validates required source ratings before it sends files or metadata.
 
 **Approved decision (2026-11-13):** A known rating-bearing booru family must provide a valid and nonconflicting rating or the item is refused before automatic import. Generic and unprofiled sources are allowed to remain unrated. Current validation accepts known family rating syntax and built-in profile rating overrides, then applies user overrides to the final rating; a user override does not retroactively make a malformed source claim authoritative. For Philomena, contradictory `safe`/`suggestive`/`questionable`/`explicit` rating tags or conflict between a rating field and tags are refused. A shipped profile's default can cover a truly missing rating for a known source. Custom-only sources can declare their family and rating conventions in their own profile. Use existing `mapping_failed` reporting; this is not an automatic Mebooru holding-folder implementation. A future local AI audit of genuinely unrated library entries remains a separate feature.
 
@@ -83,7 +83,7 @@ Today, a malformed or unknown rating can map to the empty string; the code comme
 
 1. Source categories and ratings retain their site-specific meanings.
 2. User overrides and existing blacklist/drop behavior still work, including the pre-download blacklist and post-enrichment safety check.
-3. No unknown source is blocked solely because it lacks an adapter.
+3. Standard acquisition keeps the generic fallback for sources without an adapter. Strict blacklist verification has an explicit allowlist of supported acquisition routes.
 4. Expected categorized sources do not silently flatten to generic tags on failure.
 5. No silent new network access in the Mebooru library core. Meloader remains the network-capable companion.
 6. Tests cover known-good, missing, invalid and transient-failure paths without inventing data.
@@ -93,7 +93,7 @@ Today, a malformed or unknown rating can map to the empty string; the code comme
 
 1. **Source authority and user control — APPROVED.** Source taxonomy determines how the source described a tag. User overrides and rules determine how Meloader sends it to Mebooru, including reclassification and suppression. The tag trace shows the source field and spelling alongside the mapped category and the tag sent. Derpibooru trace uses the same taxonomy adapter as acquisition. Source identity and attribution continue to travel with the mapped tags.
 2. **Invalid or unavailable required taxonomy — APPROVED.** When an extractor expected to categorize tags supplies flat tags without usable category data, the item fails visibly with `mapping_failed`. Empty, unreadable and bookmark-only fields cannot satisfy this check. If the required Derpibooru lookup fails, the item fails before sending image or tag data. This applies to downloads, metadata refresh, online lookup, replacement and bundle pages. Generic flat-tag imports still use the existing mapper.
-3. **Invalid required rating — APPROVED 2026-11-13:** A source from a known rating-bearing booru family with missing, malformed, or conflicting rating evidence must fail visibly before its metadata/file is automatically pushed. A genuinely unrated generic source may remain unrated. This is approved separately from any Mebooru default filter or future local AI classification workflow. Implementation is in `meloader-item3-rating-integrity`; [Go race tests and vet passed](https://github.com/jwebb7847-ui/meloader/actions/runs/43344451398), with live positive and malformed-rating checks completed against local Mebooru for reachable sources. No change to the Mebooru contract.
+3. **Invalid required rating — APPROVED 2026-11-13.** A source from a known rating-bearing booru family with missing, malformed, or conflicting rating evidence must fail visibly before automatic import. A genuinely unrated generic source may remain unrated. Mebooru's rating filter and any future local AI classification are separate decisions. The implementation shipped in [PR #5](https://github.com/jwebb7847-ui/meloader/pull/5). [Rating validation results](../validation/rating-integrity.md)
 4. **e621 category fidelity — APPROVED:** keep `lore → meta` and `contributor → artist`. The library does not need a separate lore filter, and Artist includes creative contributors. Category fidelity for other mappings remains open.
 5. **Source evidence retention — APPROVED.** Mebooru retains durable provenance through the existing import contract, including source identity, post ID, canonical URL, original attribution, and tag origins. Keep richer diagnostics selective and local to Meloader. Define the fields and retention period for a specific audit or replay use case before persisting them. Full upstream payload archival stays deferred.
 6. **Derpibooru source integrity — APPROVED for Item 4.** Require a well-formed native tag list and verified tag records. An explicit null category represents an uncategorized tag. Refresh older cache entries that omitted this evidence. Match usable tag IDs to their listed names and keep exact-name lookup for tags whose ID evidence is absent or unusable. Refuse contradictory evidence with `mapping_failed`. Automatic post writes require the extractor's positive native post ID and use its canonical Derpibooru URL. Original attribution travels separately.
@@ -102,4 +102,4 @@ Today, a malformed or unknown rating can map to the empty string; the code comme
 8. **Taxonomy and vocabulary ownership — APPROVED.** Meloader interprets source taxonomy and applies approved filing rules. Mebooru owns cross-source search, synonyms, and local organization. Validate individual filing decisions against source evidence.
 9. **Adapter package boundary — APPROVED.** Keep the registry in `internal/taxonomy`. Revisit the boundary when a concrete additional source capability needs a shared contract. Queueing, media transfer, blacklist policy, and Mebooru writes stay in the generic acquisition pipeline.
 
-[Blacklist timing](../validation/blacklist-timing.md) is under review. The user controls the content rules, and the current review focuses on stopping media transfer when a selected rule matches or its required evidence cannot be verified.
+10. **Strict blacklist timing — APPROVED for Item 4.** The opt-in mode uses operator-defined rules. It withholds media before transfer if a selected rule matches, required metadata cannot be verified, or the acquisition route is unsupported. [Policy, supported routes, and validation](../validation/blacklist-timing.md)

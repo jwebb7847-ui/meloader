@@ -1,6 +1,6 @@
 # Source rating integrity — acceptance plan and results
 
-**Status (2026-11-13):** The real pipeline-to-HTTP boundary tests and full Go race tests + vet passed at commit `16d490887d17d3a4de4966182bdec2b33c28852f` on [GitHub CI run 43346314936](https://github.com/jwebb7847-ui/meloader/actions/runs/43346314936). Positive imports from Derpibooru and Safebooru and the local malformed Safebooru rating check against running Mebooru have passed. The [live e621 result](e621.md#live-e621-import--2026-11-13) passed after a network-path change. Danbooru live validation remains deferred.
+**Status (2026-11-14).** The real pipeline-to-HTTP boundary tests, Go race tests, and vet passed at `16d4908`. Live imports passed for Derpibooru, Safebooru, [e621](e621.md#live-e621-import--2026-11-13), and [Danbooru](negative-path-throughput.md#8-live-danbooru-acceptance). The local malformed Safebooru rating check also passed against running Mebooru. [GitHub CI run 43346314936](https://github.com/jwebb7847-ui/meloader/actions/runs/43346314936)
 
 ## Approved policy
 
@@ -116,7 +116,7 @@ PY
 fi
 ```
 
-**Important:** gallery-dl `--dump-json` can return a JSON list containing an error message (`-1`) and an exit code of zero, because the `DataJob` captures the extractor exception. A successful shell exit alone is **not** proof of successful metadata extraction. The parser above prints diagnostic **types/statuses only**, not raw error strings or URLs. On 2026-11-13, a pinned 1.32.19 macOS validation command returned `No e621 metadata returned`; extraction remains **unverified** until the embedded message is inspected.
+gallery-dl `--dump-json` can return a JSON list containing an error message (`-1`) with an exit code of zero because `DataJob` captures the extractor exception. Check for post metadata in the response. The parser above prints diagnostic types and statuses. The first macOS attempt with 1.32.19 returned `No e621 metadata returned`, which led to the follow-up below.
 
 This requests post **metadata over the internet**, not the image media, and does not import into Mebooru. A site refusal or removed example post is a separate access/extractor issue. If no executable is found, verify the audit configuration's `gallerydl.binary_path` *locally* (do not share the whole TOML file, as it may hold secrets) or install the pinned gallery-dl into a separate temporary Python virtual environment for the test. **Do not change the application's configuration or add a global installer just to satisfy this check.**
 
@@ -158,9 +158,7 @@ The redacted exception from the existing 1.32.19 metadata attempt was:
 ConnectionError: ('Connection aborted.', ConnectionResetError(54, 'Connection reset by peer'))
 ```
 
-It indicates the HTTP client did **not** receive a usable e621 HTTP response. We cannot attribute the reset to the site, intermediary or client path from this exception alone. The live e621 extraction gate is **environment-blocked / incomplete**, not a failed source-category or rating-compatibility test. **Do not keep retrying** or report an invented HTTP 403/429. Pinned upstream 1.32.19 extractor source and fixtures show the expected categorized `tags_<category>` output when a post can be fetched; our local mapper tests and mock HTTP push tests remain green.
-
-For a separate, controlled future test, either retry once from an independently working network or choose another reachable rated/unrated source for the end-to-end pipeline. The first priority is to establish the existing audit configuration and the active Mebooru instance without changing library state. The isolated validation venv's binary can be selected at runtime with `MONLOADER_GALLERYDL_BINARY_PATH` for a `go run` test without editing `monloader.toml`; verify the config and target data/gallery first.
+The initial attempt stopped at a transport reset before the HTTP client received a usable e621 response. The peer responsible remains unknown. Local mapper and mock HTTP push tests had already passed. The later run from a working network path completed the [live e621 check](e621.md#live-e621-import--2026-11-13).
 
 ## Running the application from the checked-out source
 
@@ -172,7 +170,7 @@ Use the [paired audit launch procedure](local-audit.md#launch-the-paired-audit-s
 
 **Metadata-only preflight:** `https://derpibooru.org/images/3796956` returned `Source: derpibooru`, `Post ID: 3796956`, `Source rating tags: ['safe']`, `Tag count: 19`, `Metadata preflight: PASS`.
 
-**Real import operator evidence:** Meloader queue row for the same URL showed `succeeded`, `derpibooru`, gallery `Audit_A`, `1 created`; expanded item `post 3796956` showed `created`, `19 tags sent`. Mebooru's sidebar showed `general` under rating and recognizable artist, character, species, meta and general taxonomy. **Important:** sidebar counts are gallery-wide, so we still need to open the imported image's own detail view to verify its exact persisted rating, source provenance and tag categories.
+**Queue evidence.** Meloader showed `succeeded`, `derpibooru`, gallery `Audit_A`, and `1 created`. The expanded row for post `3796956` showed `19 tags sent`. The image detail evidence below confirms which tags persisted.
 
 **Image-level persisted metadata CONFIRMED (2026-11-13):** The operator supplied the individual detail page for Mebooru `Audit_A` image ID `7`, `3796956.jpg`, including a follow-up with `id:7` in the search box. The page showed the image rendered from `~/Desktop/Audit Gallery A`, 774 × 1024 JPEG, hashes, `Added via monloader`, and the `derpibooru` source with original x.com link. **Correction of prior misinterpretation:** code inspection in Mebooru's `internal/web/handlers_detail.go` and `internal/web/tag_sidebar.go` confirms the detail page's tag sidebar is built from `GetImageTags(id)` for **this image only**; the numbers beside the tags indicate their global usage counts, not that the sidebar is showing tags from all search results. Therefore its displayed tags definitively belong to image 7: `rating:general` (translated from source `safe`), `meta:equestria_girls`, `meta:g4`, `artist:liaaqila`, `character:twilight_sparkle`, `species:human`, `species:pony`, and twelve general tags (`commission`, `duality`, `eyes_closed`, `human_ponidox`, `open_mouth`, `open_smile`, `outstretched_hoof`, `promo`, `self_paradox`, `self_ponidox`, `smiling`, `traditional_art`). This totals **19 persisted categorized tags**, matching the Meloader job's `19 tags sent`.
 
@@ -200,6 +198,7 @@ Use the [paired audit launch procedure](local-audit.md#launch-the-paired-audit-s
 - [x] Operator confirmed Mebooru `connected to monloader dev` after correcting `[monloader].api_url` to 8456 and restarting; existing bearer token accepted and no re-pair was necessary
 - [x] Live Derpibooru trace verified source taxonomy, mapped tags and Mebooru resolution in Audit_A
 - [x] Live e621 categorized extraction, rating mapping and import passed for post `535` in `Audit_A`. See the [live e621 result](e621.md#live-e621-import--2026-11-13).
+- [x] Live Danbooru trace and import passed for post `294929` in `Audit_A`, with native `s` mapped to `rating:sensitive`. See the [live Danbooru result](negative-path-throughput.md#8-live-danbooru-acceptance).
 - [x] Opt-in malformed Safebooru rating test passed against local `Audit_A`: `mapping_failed`, one upload attempt for the valid control, and SHA-256 verified by read-back
 - [x] e621 category policy approved after [live traces](e621.md#live-lore-and-contributor-traces--2026-11-13): retain `lore → meta` and `contributor → artist`
 - [x] Bounded Safebooru end-to-end acquisition: five new images in ~12 s and 20 new images in ~35 s; see the [staged workload results](negative-path-throughput.md#bounded-20-post-safebooru-run-and-continuation--passed)

@@ -1,7 +1,7 @@
 # Meloader / Mebooru project roadmap
 
 > Working architecture and development plan, maintained for this fork.
-> Last reviewed 2026-11-13. [Project handoff](docs/project/handoff.md) · [Local audit runbook](docs/validation/local-audit.md)
+> Last reviewed 2026-11-14. [Project handoff](docs/project/handoff.md) · [Local audit runbook](docs/validation/local-audit.md)
 
 ## North star
 
@@ -14,7 +14,7 @@ Keep the network boundary intact: Meloader is the explicitly WAN-capable acquisi
 ## Architecture invariants
 
 1. One generic gallery-dl / queue / download / upload pipeline. Do not reimplement it separately in each adapter.
-2. Source profiles remain the broad compatibility fallback. An unrecognized source works exactly as before when it has no adapter.
+2. Source profiles remain the broad compatibility fallback for standard acquisition. The opt-in strict blacklist has its own supported routes.
 3. Adapters explain source semantics; generic rules, blacklist policy, destination selection, file handling, deduplication, and Mebooru communication stay outside adapters.
 4. A source with trustworthy, fully categorized metadata must not incur network enrichment merely because an adapter is registered.
 5. Preserve original source identity, attribution, and Mebooru tag/source provenance. Do not turn known-invalid metadata into silently accepted general tags.
@@ -25,7 +25,7 @@ Keep the network boundary intact: Meloader is the explicitly WAN-capable acquisi
 
 ## Current work and branches
 
-- **Meloader `main`** contains Items 1–3 and the first Item 4 fixes. [PR #5](https://github.com/jwebb7847-ui/meloader/pull/5) merged the stacked taxonomy and source-semantics work at `3aa5aca`. [PR #6](https://github.com/jwebb7847-ui/meloader/pull/6) merged the Derpibooru integrity fixes at `18edb38` after Mac validation. PRs #1–#4 record the earlier stacked reviews.
+- **Meloader `main`** contains Items 1–3 and the completed parts of Item 4. [PR #5](https://github.com/jwebb7847-ui/meloader/pull/5) merged the stacked taxonomy and source-semantics work at `3aa5aca`. [PR #6](https://github.com/jwebb7847-ui/meloader/pull/6) merged the Derpibooru integrity fixes at `18edb38`. [PR #7](https://github.com/jwebb7847-ui/meloader/pull/7) merged strict blacklist verification at `5bcd092`. PRs #1–#4 record the earlier stacked reviews.
 - **Mebooru `mebooru-foundation`** contains the fork's library UI work. Its `main` remains the upstream-derived v1.24.0 baseline. See [MEBOORU.md](https://github.com/jwebb7847-ui/mebooru/blob/mebooru-foundation/MEBOORU.md) for the library's direction and baseline.
 - **Next milestone: Item 4.** Resolve the remaining taxonomy and source-adapter decisions.
 
@@ -51,7 +51,9 @@ Recover authoritative categories when gallery-dl emits flattened tags. Use the s
 
 ### 4. Further booru coverage — next
 
-[PR #6](https://github.com/jwebb7847-ui/meloader/pull/6) shipped the approved trust and fallback fixes for malformed taxonomy, tag ID verification, and canonical post provenance. The Mac audit confirmed a live import and cache reuse after restart. The [opt-in pre-download blacklist](docs/validation/blacklist-timing.md) in [PR #7](https://github.com/jwebb7847-ui/meloader/pull/7) passed loopback media-request checks and a live Mac audit in `Audit_A`. Remaining filing decisions cover verified aliases, unusual namespaces, and named original characters. Use targeted fixtures or metadata-only probes, and check request counts and cache behavior for regressions.
+[PR #6](https://github.com/jwebb7847-ui/meloader/pull/6) shipped the approved trust and fallback fixes for malformed taxonomy, tag ID verification, and canonical post provenance. The Mac audit confirmed a live import and cache reuse after restart. The [opt-in pre-download blacklist](docs/validation/blacklist-timing.md) in [PR #7](https://github.com/jwebb7847-ui/meloader/pull/7) passed loopback media-request checks and a live Mac audit in `Audit_A`. [PR #8](https://github.com/jwebb7847-ui/meloader/pull/8) passed the [debug-to-Trace URL prefill Mac check](docs/validation/blacklist-timing.md#debug-to-trace-prefill) and awaits merge.
+
+Remaining filing decisions cover verified aliases, unusual namespaces, and named original characters. Use targeted fixtures or metadata-only probes, and check request counts and cache behavior for regressions.
 
 ### 5. Meloader / Mebooru user integration
 

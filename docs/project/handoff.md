@@ -15,7 +15,7 @@ Status reviewed 2026-11-14.
 
 ## Repository state
 
-- [Meloader](https://github.com/jwebb7847-ui/meloader) develops from `main`. [PR #5](https://github.com/jwebb7847-ui/meloader/pull/5) merged Item 3 at `3aa5aca`. Live e621 and Danbooru acceptance are complete. [PR #6](https://github.com/jwebb7847-ui/meloader/pull/6) merged the first Item 4 fixes at `18edb38`. [PR #7](https://github.com/jwebb7847-ui/meloader/pull/7) adds strict blacklist verification. The live Mac check used candidate `025a3e5` before the review fixes.
+- [Meloader](https://github.com/jwebb7847-ui/meloader) develops from `main`. [PR #5](https://github.com/jwebb7847-ui/meloader/pull/5) merged Item 3 at `3aa5aca`. Live e621 and Danbooru acceptance are complete. [PR #6](https://github.com/jwebb7847-ui/meloader/pull/6) merged the first Item 4 fixes at `18edb38`. [PR #7](https://github.com/jwebb7847-ui/meloader/pull/7) merged strict blacklist verification at `5bcd092`. The Mac check used `025a3e5` for acquisition and `5bcd092` for the debug dialog's strict-mode behavior. The Trace URL prefill passed the Mac check at `eb6edd3` and awaits merge in [PR #8](https://github.com/jwebb7847-ui/meloader/pull/8).
 - [Mebooru](https://github.com/jwebb7847-ui/mebooru) has its gallery-switching and branding work on `mebooru-foundation` (last code checkpoint `fbb5232`). Its `main` remains at the upstream-derived v1.24.0 baseline (`0ac84b9`). Fetch the correct fork and inspect the current branch head before making changes in either repo.
 - The runbook describes the last observed MacBook Air audit setup. Check the local commit, listeners, and explicit config paths before relying on a running instance. GitHub changes do not restart local apps.
 
