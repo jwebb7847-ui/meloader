@@ -59,7 +59,7 @@ def verify_process(binary, app, legacy, page, api, directory):
             try:
                 fetch(origin + api)
             except urllib.error.HTTPError as error:
-                assert error.code == 401, error.code
+                assert error.code == 503 and b"api_disabled" in error.read(), error.code
             else:
                 raise AssertionError("Unauthenticated request unexpectedly accepted")
         except BaseException:
@@ -80,4 +80,4 @@ with tempfile.TemporaryDirectory() as scratch:
         assert subprocess.check_output([str(binary), "-version"], text=True).startswith(app + " ")
         verify_process(binary, app, legacy, page, api, directory)
         verify_process(binary, app, legacy, page, api, directory)
-        print(f"{app}: version, startup, host config reopen, web UI, healthcheck, bearer requirement passed", flush=True)
+        print(f"{app}: version, startup, host config reopen, web UI, healthcheck, default API access refusal passed", flush=True)
