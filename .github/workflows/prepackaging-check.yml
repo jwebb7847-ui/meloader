@@ -1,103 +1,68 @@
-name: Pre-packaging verification
-
+name: Mac app verification
 on:
   push:
     branches: [qa/prepackaging-check]
-
 permissions:
   contents: read
-
 jobs:
-  native:
-    name: Native core smoke (${{ matrix.os }})
+  mac-app:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, ubuntu-24.04-arm, windows-2025, macos-15, macos-15-intel]
+        os: [macos-15, macos-15-intel]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: 8ac2d7077596a72db6012b5f281267afe472c749
+          path: meloader-src
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: jwebb7847-ui/mebooru
-          ref: b386b0245735bd3626b696554aa93aa2c9f3981f
+          ref: 2a3861bc4dac471d374133f989a74da48bf4c783
           path: mebooru-src
           persist-credentials: false
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
         with:
-          go-version-file: go.mod
+          go-version-file: mebooru-src/go.mod
           cache: false
-      - name: Test, build and run both apps
-        run: python .github/qa/prepackaging.py
-
-  mebooru-codeql:
-    name: Mebooru Go CodeQL (${{ matrix.revision }})
-    runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - revision: baseline
-            ref: 9940c89e98001fb7dc5579f83f24e2b26d1fe86d
-          - revision: candidate
-            ref: b386b0245735bd3626b696554aa93aa2c9f3981f
-    permissions:
-      contents: read
-      security-events: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: jwebb7847-ui/mebooru
-          ref: ${{ matrix.ref }}
-          path: mebooru-src
-          persist-credentials: false
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
-        with:
-          go-version: '1.27.4'
-          cache: false
-      - uses: github/codeql-action/init@5895b2c9be147bc7f1c75ce72c5cb577febb1907
-        with:
-          languages: go
-          build-mode: manual
-          source-root: mebooru-src
-      - name: Build Mebooru for analysis
+      - name: Build and verify macOS app
         working-directory: mebooru-src
-        run: go build ./cmd/monbooru
-      - uses: github/codeql-action/analyze@5895b2c9be147bc7f1c75ce72c5cb577febb1907
-        with:
-          upload: never
-          output: ${{ runner.temp }}/mebooru-codeql
-      - name: Summarize findings
+        run: |
+          go test ./...
+          sh packaging/build-macos-app.sh ../meloader-src
+      - name: Exercise both app processes
+        working-directory: mebooru-src
         shell: bash
         run: |
-          python - "$RUNNER_TEMP/mebooru-codeql" <<'PY'
-          import collections
-          import hashlib
-          import json
-          from pathlib import Path
-          import sys
-
-          reports = list(Path(sys.argv[1]).glob("*.sarif"))
-          if not reports:
-              raise SystemExit("No CodeQL report produced")
-          findings = collections.Counter()
-          for report in reports:
-              for run in json.loads(report.read_text(encoding="utf-8"))["runs"]:
-                  for item in run.get("results", []):
-                      rule = item["ruleId"]
-                      findings[rule] += 1
-                      loc = item["locations"][0]["physicalLocation"]
-                      uri = loc["artifactLocation"]["uri"]
-                      fingerprints = item.get("partialFingerprints", {})
-                      identity = fingerprints.get("primaryLocationLineHash") or str(loc["region"]["startLine"])
-                      digest = hashlib.sha256(f"{rule}|{uri}|{identity}".encode()).hexdigest()[:20]
-                      print(f"Finding {rule} {uri}:{loc['region']['startLine']} {digest}")
-          print(f"Mebooru Go CodeQL findings: {sum(findings.values())}")
-          for rule, count in sorted(findings.items()):
-              print(f"{rule}: {count}")
-          PY
+          app="$PWD/dist/Mebooru.app"
+          export HOME="$RUNNER_TEMP/mebooru-smoke-home"
+          mkdir -p "$HOME"
+          bin="$app/Contents/MacOS"
+          "$bin/monbooru" -version
+          "$bin/monloader" -version
+          "$bin/monbooru" -no-browser >"$RUNNER_TEMP/mebooru-smoke.log" 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true; cat "$RUNNER_TEMP/mebooru-smoke.log"' EXIT
+          for port in 8455 8456; do
+            for n in {1..90}; do
+              if curl --fail --silent "http://127.0.0.1:$port/health"; then break; fi
+              kill -0 "$pid"
+              sleep 1
+            done
+            curl --fail --silent "http://127.0.0.1:$port/health"
+          done
+          curl -fsS -D "$RUNNER_TEMP/meloader-headers" -o /dev/null "http://127.0.0.1:8456/settings"
+          grep -Fi 'frame-ancestors http://127.0.0.1:8455' "$RUNNER_TEMP/meloader-headers"
+          kill -TERM "$pid"
+          wait "$pid"
+          if curl --fail --silent --max-time 3 "http://127.0.0.1:8456/health"; then
+            echo 'Companion outlived Mebooru' >&2
+            exit 1
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: Mebooru-${{ matrix.os }}
+          path: mebooru-src/dist/*.zip
+          if-no-files-found: error
