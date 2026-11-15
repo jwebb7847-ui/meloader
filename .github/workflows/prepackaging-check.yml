@@ -65,6 +65,12 @@ jobs:
                       identity = fingerprints.get("primaryLocationLineHash") or str(loc["region"]["startLine"])
                       digest = hashlib.sha256(f"{rule}|{uri}|{identity}".encode()).hexdigest()[:20]
                       print(f"Triage location {rule} {uri}:{loc['region']['startLine']} {digest}")
+                      for flow in item.get("codeFlows", []):
+                          for thread in flow.get("threadFlows", []):
+                              chain = thread.get("locations", [])
+                              if chain:
+                                  first = chain[0]["location"]["physicalLocation"]
+                                  print(f"Triage source {digest} {first['artifactLocation']['uri']}:{first['region']['startLine']}")
           print(f"Mebooru Go CodeQL findings: {sum(findings.values())}")
           for rule, count in sorted(findings.items()):
               print(f"{rule}: {count}")
