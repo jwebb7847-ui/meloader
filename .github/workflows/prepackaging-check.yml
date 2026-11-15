@@ -35,6 +35,9 @@ jobs:
   mebooru-codeql:
     name: Mebooru Go CodeQL
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -52,8 +55,11 @@ jobs:
       - uses: github/codeql-action/init@5895b2c9be147bc7f1c75ce72c5cb577febb1907
         with:
           languages: go
-          build-mode: none
+          build-mode: manual
           source-root: mebooru-src
+      - name: Build Mebooru for analysis
+        working-directory: mebooru-src
+        run: go build ./cmd/monbooru
       - uses: github/codeql-action/analyze@5895b2c9be147bc7f1c75ce72c5cb577febb1907
         with:
           upload: never
