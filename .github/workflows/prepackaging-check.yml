@@ -8,9 +8,41 @@ permissions:
   contents: read
 
 jobs:
+  native:
+    name: Native core smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm, windows-2025, macos-15, macos-15-intel]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: jwebb7847-ui/mebooru
+          ref: b386b0245735bd3626b696554aa93aa2c9f3981f
+          path: mebooru-src
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Test, build and run both apps
+        run: python .github/qa/prepackaging.py
+
   mebooru-codeql:
-    name: Mebooru CodeQL source locations
+    name: Mebooru Go CodeQL (${{ matrix.revision }})
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - revision: baseline
+            ref: 9940c89e98001fb7dc5579f83f24e2b26d1fe86d
+          - revision: candidate
+            ref: b386b0245735bd3626b696554aa93aa2c9f3981f
     permissions:
       contents: read
       security-events: read
@@ -21,7 +53,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: jwebb7847-ui/mebooru
-          ref: 9940c89e98001fb7dc5579f83f24e2b26d1fe86d
+          ref: ${{ matrix.ref }}
           path: mebooru-src
           persist-credentials: false
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
@@ -64,13 +96,7 @@ jobs:
                       fingerprints = item.get("partialFingerprints", {})
                       identity = fingerprints.get("primaryLocationLineHash") or str(loc["region"]["startLine"])
                       digest = hashlib.sha256(f"{rule}|{uri}|{identity}".encode()).hexdigest()[:20]
-                      print(f"Triage location {rule} {uri}:{loc['region']['startLine']} {digest}")
-                      for flow in item.get("codeFlows", []):
-                          for thread in flow.get("threadFlows", []):
-                              chain = thread.get("locations", [])
-                              if chain:
-                                  first = chain[0]["location"]["physicalLocation"]
-                                  print(f"Triage source {digest} {first['artifactLocation']['uri']}:{first['region']['startLine']}")
+                      print(f"Finding {rule} {uri}:{loc['region']['startLine']} {digest}")
           print(f"Mebooru Go CodeQL findings: {sum(findings.values())}")
           for rule, count in sorted(findings.items()):
               print(f"{rule}: {count}")
