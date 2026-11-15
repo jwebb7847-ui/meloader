@@ -33,8 +33,16 @@ jobs:
         run: python .github/qa/prepackaging.py
 
   mebooru-codeql:
-    name: Mebooru Go CodeQL
+    name: Mebooru Go CodeQL (${{ matrix.revision }})
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - revision: baseline
+            ref: 4642de433cbc9b89ad75a0c766cccaa50143ff03
+          - revision: candidate
+            ref: 2209a67bb098af1e8bc617c1db3ff5f7d9f18c90
     permissions:
       contents: read
       security-events: read
@@ -45,12 +53,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: jwebb7847-ui/mebooru
-          ref: 2209a67bb098af1e8bc617c1db3ff5f7d9f18c90
+          ref: ${{ matrix.ref }}
           path: mebooru-src
           persist-credentials: false
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
         with:
-          go-version-file: mebooru-src/go.mod
+          go-version: '1.27.4'
           cache: false
       - uses: github/codeql-action/init@5895b2c9be147bc7f1c75ce72c5cb577febb1907
         with:
@@ -69,6 +77,7 @@ jobs:
         run: |
           python - "$RUNNER_TEMP/mebooru-codeql" <<'PY'
           import collections
+          import hashlib
           import json
           from pathlib import Path
           import sys
@@ -79,7 +88,15 @@ jobs:
           findings = collections.Counter()
           for report in reports:
               for run in json.loads(report.read_text(encoding="utf-8"))["runs"]:
-                  findings.update(item["ruleId"] for item in run.get("results", []))
+                  for item in run.get("results", []):
+                      rule = item["ruleId"]
+                      findings[rule] += 1
+                      loc = item["locations"][0]["physicalLocation"]
+                      uri = loc["artifactLocation"]["uri"]
+                      fingerprints = item.get("partialFingerprints", {})
+                      identity = fingerprints.get("primaryLocationLineHash") or str(loc["region"]["startLine"])
+                      digest = hashlib.sha256(f"{rule}|{uri}|{identity}".encode()).hexdigest()[:20]
+                      print(f"Finding fingerprint {rule} {digest}")
           print(f"Mebooru Go CodeQL findings: {sum(findings.values())}")
           for rule, count in sorted(findings.items()):
               print(f"{rule}: {count}")
